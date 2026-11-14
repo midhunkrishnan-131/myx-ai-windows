@@ -77,7 +77,6 @@ export const LinkGuardPage: React.FC = () => {
               type="text"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
-              placeholder="Enter suspicious URL (e.g. https://xn--pple-43d.com/login)"
               className="flex-1 px-3.5 py-2.5 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs sm:text-sm font-mono text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
             />
             <Button type="submit" variant="primary" icon={<Search className="w-4 h-4" />}>

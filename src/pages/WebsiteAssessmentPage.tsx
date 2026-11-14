@@ -197,7 +197,6 @@ export const WebsiteAssessmentPage: React.FC = () => {
                 type="text"
                 value={quickScanUrl}
                 onChange={(e) => setQuickScanUrl(e.target.value)}
-                placeholder="Enter any website URL (e.g. https://google.com, https://example.com, my-site.com)"
                 className="w-full pl-9 pr-3 py-2 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs font-mono text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
               />
             </div>
@@ -297,7 +296,6 @@ export const WebsiteAssessmentPage: React.FC = () => {
               <input
                 id="new-web-url"
                 type="text"
-                placeholder="https://example.com or your-domain.com"
                 value={newUrlValue}
                 onChange={(e) => setNewUrlValue(e.target.value)}
                 className="w-full px-3 py-1.5 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs font-mono text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
@@ -311,7 +309,6 @@ export const WebsiteAssessmentPage: React.FC = () => {
               <input
                 id="new-web-name"
                 type="text"
-                placeholder="e.g. Production Web App, Main Corporate Website"
                 value={newDisplayName}
                 onChange={(e) => setNewDisplayName(e.target.value)}
                 className="w-full px-3 py-1.5 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"

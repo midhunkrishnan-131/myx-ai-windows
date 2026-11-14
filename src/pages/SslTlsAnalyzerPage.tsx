@@ -52,7 +52,6 @@ export const SslTlsAnalyzerPage: React.FC = () => {
               type="text"
               value={hostname}
               onChange={(e) => setHostname(e.target.value)}
-              placeholder="portal.myx-defense-demo.org"
               className="w-full px-3.5 py-2 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs sm:text-sm font-mono text-[#F5F7FA]"
             />
           </div>
