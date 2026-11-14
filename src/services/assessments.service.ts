@@ -22,6 +22,16 @@ export const assessmentsService = {
     );
   },
 
+  async scanWebsiteUrl(targetUrl: string, actorEmail?: string) {
+    return apiClient.request<AssessmentRun>(
+      '/assessments/scan-website',
+      {
+        method: 'POST',
+        body: JSON.stringify({ targetUrl, actorEmail }),
+      }
+    );
+  },
+
   async runNetworkAssessment(targetId: string, profile: string) {
     return apiClient.request<NetworkPortResult[]>(
       '/assessments/network/run',

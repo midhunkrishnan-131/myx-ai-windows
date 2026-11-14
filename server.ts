@@ -352,6 +352,280 @@ async function startServer() {
     res.status(201).json(run);
   });
 
+  // 5b. Live Real-Time Website Header & TLS Assessment Endpoint
+  app.post('/api/v1/assessments/scan-website', async (req: Request, res: Response) => {
+    let { targetUrl, actorEmail } = req.body || {};
+    if (!targetUrl || typeof targetUrl !== 'string') {
+      res.status(400).json({ error: 'TARGET_URL_REQUIRED', message: 'A valid target URL or domain is required.' });
+      return;
+    }
+
+    targetUrl = targetUrl.trim();
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      targetUrl = `https://${targetUrl}`;
+    }
+
+    const ssrfResult = validateTargetSsrfGuard(targetUrl, dbState.settings.labTargetsAllowed, true);
+    if (!ssrfResult.allowed) {
+      res.status(403).json({
+        error: 'SSRF_GUARD_BLOCKED',
+        message: ssrfResult.blockedReason || 'Target blocked by SSRF defense guard.',
+      });
+      return;
+    }
+
+    const startMs = Date.now();
+    try {
+      const response = await fetch(targetUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'MYX-AI-Security-Auditor/2.4 (Defensive Assessment; +https://myx-security.io)',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      const headers = response.headers;
+      const status = response.status;
+      const results: any[] = [];
+
+      // 1. Content-Security-Policy (CSP)
+      const csp = headers.get('content-security-policy') || headers.get('content-security-policy-report-only');
+      if (!csp) {
+        results.push({
+          id: `chk-csp-${Date.now()}`,
+          check_code: 'WEB-CSP-001',
+          check_title: 'Content-Security-Policy (CSP) Missing',
+          category: 'HTTP Security Headers',
+          status: 'FAIL',
+          severity: 'High',
+          confidence: 'Confirmed',
+          raw_evidence: `HTTP/${response.status} ${response.statusText}\n(Content-Security-Policy header absent)`,
+          remediation_text: "Define a robust Content-Security-Policy with default-src 'self' and explicit frame-ancestors 'none' to mitigate XSS and clickjacking.",
+        });
+      } else if (csp.includes("'unsafe-inline'") || csp.includes("'unsafe-eval'") || csp.includes('*')) {
+        results.push({
+          id: `chk-csp-${Date.now()}`,
+          check_code: 'WEB-CSP-001',
+          check_title: 'Content-Security-Policy Contains Permissive Directives (unsafe-inline / wildcard)',
+          category: 'HTTP Security Headers',
+          status: 'WARNING',
+          severity: 'Medium',
+          confidence: 'Confirmed',
+          raw_evidence: `Content-Security-Policy: ${csp.substring(0, 300)}`,
+          remediation_text: "Replace 'unsafe-inline' and wildcard '*' sources with cryptographic nonces (nonce-...) or SHA-256 hashes.",
+        });
+      } else {
+        results.push({
+          id: `chk-csp-${Date.now()}`,
+          check_code: 'WEB-CSP-001',
+          check_title: 'Content-Security-Policy (CSP) Enforced',
+          category: 'HTTP Security Headers',
+          status: 'PASS',
+          severity: 'Informational',
+          confidence: 'Confirmed',
+          raw_evidence: `Content-Security-Policy: ${csp.substring(0, 200)}...`,
+          remediation_text: 'Policy is actively enforced.',
+        });
+      }
+
+      // 2. Strict-Transport-Security (HSTS)
+      const hsts = headers.get('strict-transport-security');
+      if (targetUrl.startsWith('https://')) {
+        if (!hsts) {
+          results.push({
+            id: `chk-hsts-${Date.now()}`,
+            check_code: 'WEB-HSTS-002',
+            check_title: 'Strict-Transport-Security (HSTS) Missing',
+            category: 'Transport Security',
+            status: 'FAIL',
+            severity: 'High',
+            confidence: 'Confirmed',
+            raw_evidence: `Target: ${targetUrl}\n(Strict-Transport-Security header not returned)`,
+            remediation_text: 'Enforce HSTS by configuring: Strict-Transport-Security: max-age=31536000; includeSubDomains; preload to protect against SSL stripping.',
+          });
+        } else {
+          results.push({
+            id: `chk-hsts-${Date.now()}`,
+            check_code: 'WEB-HSTS-002',
+            check_title: 'Strict-Transport-Security (HSTS) Active',
+            category: 'Transport Security',
+            status: 'PASS',
+            severity: 'Informational',
+            confidence: 'Confirmed',
+            raw_evidence: `Strict-Transport-Security: ${hsts}`,
+            remediation_text: 'HSTS is properly configured.',
+          });
+        }
+      }
+
+      // 3. X-Frame-Options (Clickjacking)
+      const xfo = headers.get('x-frame-options');
+      if (!xfo && (!csp || !csp.includes('frame-ancestors'))) {
+        results.push({
+          id: `chk-xfo-${Date.now()}`,
+          check_code: 'WEB-XFO-003',
+          check_title: 'Missing X-Frame-Options & frame-ancestors Clickjacking Defense',
+          category: 'HTTP Security Headers',
+          status: 'FAIL',
+          severity: 'Medium',
+          confidence: 'Confirmed',
+          raw_evidence: `HTTP ${status}\n(X-Frame-Options header absent)`,
+          remediation_text: 'Configure X-Frame-Options: DENY or SAMEORIGIN (or CSP frame-ancestors) to prevent framing attacks.',
+        });
+      } else {
+        results.push({
+          id: `chk-xfo-${Date.now()}`,
+          check_code: 'WEB-XFO-003',
+          check_title: 'Clickjacking Protection Enforced',
+          category: 'HTTP Security Headers',
+          status: 'PASS',
+          severity: 'Informational',
+          confidence: 'Confirmed',
+          raw_evidence: xfo ? `X-Frame-Options: ${xfo}` : `CSP frame-ancestors active`,
+          remediation_text: 'Clickjacking protections are in place.',
+        });
+      }
+
+      // 4. X-Content-Type-Options (MIME Sniffing)
+      const xcto = headers.get('x-content-type-options');
+      if (!xcto || !xcto.toLowerCase().includes('nosniff')) {
+        results.push({
+          id: `chk-xcto-${Date.now()}`,
+          check_code: 'WEB-XCTO-004',
+          check_title: 'Missing X-Content-Type-Options: nosniff Header',
+          category: 'HTTP Security Headers',
+          status: 'WARNING',
+          severity: 'Low',
+          confidence: 'Confirmed',
+          raw_evidence: `X-Content-Type-Options: ${xcto || '(absent)'}`,
+          remediation_text: 'Set X-Content-Type-Options: nosniff to stop browsers from MIME-sniffing away from declared Content-Type.',
+        });
+      } else {
+        results.push({
+          id: `chk-xcto-${Date.now()}`,
+          check_code: 'WEB-XCTO-004',
+          check_title: 'X-Content-Type-Options: nosniff Enforced',
+          category: 'HTTP Security Headers',
+          status: 'PASS',
+          severity: 'Informational',
+          confidence: 'Confirmed',
+          raw_evidence: `X-Content-Type-Options: nosniff`,
+          remediation_text: 'MIME-sniffing protection active.',
+        });
+      }
+
+      // 5. Server & Technology Exposure
+      const serverBanner = headers.get('server');
+      const poweredBy = headers.get('x-powered-by');
+      if (serverBanner || poweredBy) {
+        results.push({
+          id: `chk-srv-${Date.now()}`,
+          check_code: 'WEB-EXP-005',
+          check_title: 'Server Banner / Technology Fingerprinting Exposed',
+          category: 'Information Exposure',
+          status: 'WARNING',
+          severity: 'Low',
+          confidence: 'Confirmed',
+          raw_evidence: `Server: ${serverBanner || '(none)'}\nX-Powered-By: ${poweredBy || '(none)'}`,
+          remediation_text: 'Suppress vendor banners (server_tokens off in nginx, app.disable("x-powered-by") in Express) to limit attacker reconnaissance.',
+        });
+      } else {
+        results.push({
+          id: `chk-srv-${Date.now()}`,
+          check_code: 'WEB-EXP-005',
+          check_title: 'Server Banner Masked / Suppressed',
+          category: 'Information Exposure',
+          status: 'PASS',
+          severity: 'Informational',
+          confidence: 'Confirmed',
+          raw_evidence: 'Server and X-Powered-By headers omitted or sanitized.',
+          remediation_text: 'Information leakage mitigated.',
+        });
+      }
+
+      // 6. Referrer-Policy
+      const referrerPolicy = headers.get('referrer-policy');
+      if (!referrerPolicy) {
+        results.push({
+          id: `chk-ref-${Date.now()}`,
+          check_code: 'WEB-RP-006',
+          check_title: 'Missing Explicit Referrer-Policy Header',
+          category: 'Privacy & Referrer',
+          status: 'WARNING',
+          severity: 'Low',
+          confidence: 'Confirmed',
+          raw_evidence: `Referrer-Policy: (absent)`,
+          remediation_text: 'Configure Referrer-Policy: strict-origin-when-cross-origin to avoid leaking sensitive URL query parameters.',
+        });
+      } else {
+        results.push({
+          id: `chk-ref-${Date.now()}`,
+          check_code: 'WEB-RP-006',
+          check_title: 'Referrer-Policy Configured',
+          category: 'Privacy & Referrer',
+          status: 'PASS',
+          severity: 'Informational',
+          confidence: 'Confirmed',
+          raw_evidence: `Referrer-Policy: ${referrerPolicy}`,
+          remediation_text: 'Referrer policy is active.',
+        });
+      }
+
+      const passed = results.filter(r => r.status === 'PASS').length;
+      const warnings = results.filter(r => r.status === 'WARNING').length;
+      const failed = results.filter(r => r.status === 'FAIL').length;
+      const score = Math.max(15, Math.min(100, Math.round(100 - (failed * 25) - (warnings * 10))));
+
+      let domainName = targetUrl;
+      try {
+        domainName = new URL(targetUrl).hostname;
+      } catch {}
+
+      const runId = `asm-web-${Date.now()}`;
+      const newRun = {
+        id: runId,
+        organization_id: 'org-myx-enterprise-01',
+        target_id: null,
+        target_display: targetUrl,
+        module_type: 'WEBSITE',
+        status: 'COMPLETED',
+        initiated_by_email: actorEmail || 'midhun.krishnan@myx-security.io',
+        profile_name: `Live HTTP Security Header & TLS Audit: ${domainName}`,
+        risk_score: score,
+        started_at: new Date(startMs).toISOString(),
+        completed_at: new Date().toISOString(),
+        is_demo_preview: false,
+        summary: {
+          total_checks: results.length,
+          passed,
+          warnings,
+          failed,
+          requires_elevation: 0,
+        },
+        results,
+      };
+
+      dbState.assessments = [newRun, ...dbState.assessments];
+      appendServerAuditLog(
+        'ASSESSMENT',
+        'WEBSITE_SCAN_COMPLETED',
+        'assessment_run',
+        runId,
+        actorEmail || 'midhun.krishnan@myx-security.io',
+        'SECURITY_ANALYST',
+        { target: targetUrl, score }
+      );
+      res.status(200).json(newRun);
+    } catch (err: any) {
+      res.status(502).json({
+        error: 'SCAN_FAILED',
+        message: `Failed to connect to ${targetUrl}: ${err?.message || 'Network timeout or connection refused'}`,
+      });
+    }
+  });
+
   // 6. Windows 10/11 Agent Management Endpoints
   app.post('/api/v1/windows-agent/enroll', (req: Request, res: Response) => {
     const { hostname, displayName, osEdition, actorEmail } = req.body;

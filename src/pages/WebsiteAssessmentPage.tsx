@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Globe, Play, PlusCircle, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Globe, Play, PlusCircle, ShieldCheck, CheckCircle2, Loader2 } from 'lucide-react';
 import { useSystemStatus } from '../context/SystemStatusContext';
 import { useAuth } from '../hooks/useAuth';
 import { useRBAC } from '../hooks/useRBAC';
 import { validateTargetSsrfGuard } from '../utils/securityLogic';
+import { assessmentsService } from '../services/assessments.service';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { SeverityBadge } from '../components/ui/SeverityBadge';
@@ -12,7 +13,7 @@ import { CodeEvidenceBlock } from '../components/ui/CodeEvidenceBlock';
 import { TargetSelector } from '../components/common/TargetSelector';
 import { AuthorizationBanner } from '../components/common/AuthorizationBanner';
 import { ErrorState } from '../components/ui/States';
-import { TargetEnvironment, VerificationMethod } from '../types/assessment.types';
+import { TargetEnvironment, VerificationMethod, AssessmentRun } from '../types/assessment.types';
 
 export const WebsiteAssessmentPage: React.FC = () => {
   const { targets, registerTarget, verifyTarget, assessments, addAssessmentRun, labTargetsAllowed } =
@@ -22,6 +23,11 @@ export const WebsiteAssessmentPage: React.FC = () => {
 
   const webTargets = targets.filter((t) => t.target_type === 'URL' || t.target_type === 'DOMAIN');
   const [selectedTargetId, setSelectedTargetId] = useState<string>(webTargets[0]?.id || '');
+
+  // Quick Live Website URL Assessment state
+  const [quickScanUrl, setQuickScanUrl] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
+  const [liveScanResult, setLiveScanResult] = useState<AssessmentRun | null>(null);
 
   // New Target Registration state
   const [newUrlValue, setNewUrlValue] = useState('');
@@ -34,8 +40,49 @@ export const WebsiteAssessmentPage: React.FC = () => {
 
   const selectedTarget = targets.find((t) => t.id === selectedTargetId);
   const latestWebsiteRun =
+    liveScanResult ||
     assessments.find((a) => a.module_type === 'WEBSITE' && a.target_id === selectedTargetId) ||
     assessments.find((a) => a.module_type === 'WEBSITE');
+
+  const handleQuickScan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegistrationError(null);
+    setScanMessage(null);
+
+    const trimmed = quickScanUrl.trim();
+    if (!trimmed) {
+      setRegistrationError('Please enter a website URL or domain to scan (e.g., https://example.com).');
+      return;
+    }
+
+    const formatted = trimmed.startsWith('http://') || trimmed.startsWith('https://')
+      ? trimmed
+      : `https://${trimmed}`;
+
+    const ssrfCheck = validateTargetSsrfGuard(formatted, labTargetsAllowed, true);
+    if (!ssrfCheck.allowed) {
+      setRegistrationError(`SSRF Guard Blocked Target: ${ssrfCheck.blockedReason}`);
+      return;
+    }
+
+    setIsScanning(true);
+    try {
+      const res = await assessmentsService.scanWebsiteUrl(formatted, user?.email);
+      if (res.data) {
+        addAssessmentRun(res.data);
+        setLiveScanResult(res.data);
+        setScanMessage(
+          `Live assessment completed for ${res.data.target_display}! Security Score: ${res.data.risk_score}/100 · ${res.data.summary.failed} Failed, ${res.data.summary.warnings} Warnings, ${res.data.summary.passed} Passed.`
+        );
+      } else if (res.error) {
+        setRegistrationError(`Scan Error: ${res.error.message || 'Failed to scan website'}`);
+      }
+    } catch (err: any) {
+      setRegistrationError(`Scan Failed: ${err?.message || 'Network connection failed'}`);
+    } finally {
+      setIsScanning(false);
+    }
+  };
 
   const handleRegisterTarget = (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,6 +184,40 @@ export const WebsiteAssessmentPage: React.FC = () => {
 
       <AuthorizationBanner scopeNote="Passive HTTP header, cookie, and TLS configuration inspection only. Never sends SQLi, XSS, fuzzing payloads, or DoS traffic. Note: Passive header analysis does not replace authenticated DAST or source code review." />
 
+      {/* Quick Live Website Assessment Bar */}
+      <Card
+        title="Quick Live Website Security Assessment"
+        subtitle="Enter any live website URL or domain to immediately scan HTTP security headers, CSP, HSTS, clickjacking, and server exposure."
+      >
+        <form onSubmit={handleQuickScan} className="space-y-3">
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#A7B0BC]" />
+              <input
+                type="text"
+                value={quickScanUrl}
+                onChange={(e) => setQuickScanUrl(e.target.value)}
+                placeholder="Enter any website URL (e.g. https://google.com, https://example.com, my-site.com)"
+                className="w-full pl-9 pr-3 py-2 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs font-mono text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
+              />
+            </div>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={isScanning || !can('assessments:run')}
+              icon={isScanning ? <Loader2 className="w-4 h-4 animate-spin text-[#0B0D10]" /> : <Play className="w-4 h-4" />}
+              className="w-full sm:w-auto shrink-0"
+            >
+              {isScanning ? 'Scanning Website...' : 'Scan Website Now'}
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center justify-between text-[11px] text-[#A7B0BC] gap-2">
+            <span>Real-time passive audit: Content-Security-Policy · HSTS · X-Frame-Options · X-Content-Type-Options · Server Banners · Referrer-Policy</span>
+            <span className="font-mono text-[#38BDF8]">SafeOutboundClient (10s Timeout · Follows Redirects)</span>
+          </div>
+        </form>
+      </Card>
+
       {registrationError && <ErrorState message={registrationError} />}
 
       {scanMessage && (
@@ -216,7 +297,7 @@ export const WebsiteAssessmentPage: React.FC = () => {
               <input
                 id="new-web-url"
                 type="text"
-                placeholder="https://secops.example.org"
+                placeholder="https://example.com or your-domain.com"
                 value={newUrlValue}
                 onChange={(e) => setNewUrlValue(e.target.value)}
                 className="w-full px-3 py-1.5 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs font-mono text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
@@ -230,7 +311,7 @@ export const WebsiteAssessmentPage: React.FC = () => {
               <input
                 id="new-web-name"
                 type="text"
-                placeholder="Corporate SecOps Portal"
+                placeholder="e.g. Production Web App, Main Corporate Website"
                 value={newDisplayName}
                 onChange={(e) => setNewDisplayName(e.target.value)}
                 className="w-full px-3 py-1.5 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
@@ -301,7 +382,23 @@ export const WebsiteAssessmentPage: React.FC = () => {
       {latestWebsiteRun && (
         <Card
           title={`Inspected Controls — ${latestWebsiteRun.target_display}`}
-          subtitle="Raw HTTP headers recorded with automatic Authorization/Cookie secret masking"
+          subtitle={latestWebsiteRun.is_demo_preview ? 'Sample Preview Dataset' : 'Live Real-Time HTTP Security Header & Configuration Evidence'}
+          headerAction={
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#A7B0BC]">Security Score:</span>
+              <span
+                className={`px-2.5 py-0.5 rounded text-xs font-bold font-mono border ${
+                  latestWebsiteRun.risk_score >= 80
+                    ? 'text-[#22C55E] bg-[#22C55E]/10 border-[#22C55E]/30'
+                    : latestWebsiteRun.risk_score >= 50
+                      ? 'text-[#F59E0B] bg-[#F59E0B]/10 border-[#F59E0B]/30'
+                      : 'text-[#EF4444] bg-[#EF4444]/10 border-[#EF4444]/30'
+                }`}
+              >
+                {latestWebsiteRun.risk_score}/100
+              </span>
+            </div>
+          }
         >
           <div className="space-y-4">
             {latestWebsiteRun.results.map((check) => (
