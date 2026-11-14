@@ -4,21 +4,12 @@
     <meta charset="UTF-8" />
     <script>
       (function() {
-        // Auto-bridge for VS Code Live Server (port 5500/5501) to live Vite/Node server on 3000
-        if (window.location.port === '5500' || window.location.port === '5501' || window.location.port === '5502') {
-          if (window.location.pathname.indexOf('/dist/') !== -1) return;
-          fetch('http://localhost:3000/api/v1/health')
-            .then(function(r) { return r.json(); })
-            .then(function(d) {
-              if (d && d.status === 'ok') {
-                window.location.replace('http://localhost:3000' + window.location.hash);
-              } else {
-                window.location.replace('/dist/index.html' + window.location.hash);
-              }
-            })
-            .catch(function() {
-              window.location.replace('/dist/index.html' + window.location.hash);
-            });
+        // Auto-bridge for VS Code Live Server (port 5500..5510) to active Vite/Node server on 3000
+        var p = window.location.port;
+        if (p >= '5500' && p <= '5510') {
+          var targetHost = window.location.hostname || 'localhost';
+          var targetUrl = 'http://' + targetHost + ':3000' + (window.location.hash || '');
+          window.location.replace(targetUrl);
         }
       })();
     </script>
@@ -37,7 +28,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   </head>
   <body class="bg-[#0B0D10] text-[#F5F7FA] antialiased selection:bg-[#D6AE45]/30 selection:text-[#F5F7FA] overflow-x-hidden">
-    <div id="root"></div>
+    <div id="root">
+      <noscript>
+        <div style="font-family:sans-serif; min-height:100vh; background:#0B0D10; color:#F5F7FA; display:flex; align-items:center; justify-content:center; padding:20px;">
+          <div style="max-width:480px; background:#141920; border:1px solid #29313B; border-radius:12px; padding:32px; text-align:center;">
+            <h2 style="font-size:20px; font-weight:700; color:#D6AE45; margin-bottom:12px;">MYX AI (Windows Edition)</h2>
+            <p style="font-size:14px; color:#A7B0BC; line-height:1.6; margin-bottom:20px;">JavaScript is required to run the MYX AI security portal.</p>
+            <a href="http://localhost:3000" style="display:inline-block; padding:12px 24px; background:#D6AE45; color:#0B0D10; font-weight:600; font-size:14px; border-radius:8px; text-decoration:none;">Open App on Port 3000 &rarr;</a>
+          </div>
+        </div>
+      </noscript>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
