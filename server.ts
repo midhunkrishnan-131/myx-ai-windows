@@ -647,6 +647,10 @@ async function startServer() {
 
     let aiSummaryText = `[Live Backend Grounded Analysis via ${modelName}] Evaluated your defensive query ("${promptText}") against attached findings (${attachedCodes.join(', ')}) and tenant-isolated RAG references.`;
     let activeModelName = modelName;
+    let aiRiskInterpretation =
+      'Unauthenticated network services (RDP without NLA) and unencrypted secondary volumes present immediate lateral movement and physical data exposure risks.';
+    let recommendedRemediation =
+      '# Review and test in a non-production environment before applying:\nSet-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp" -Name "UserAuthentication" -Value 1 -Type DWord';
 
     const aiResult = await generateAiCompletionWithFailover({
       contents: `You are the defensive AI Security Analyst for MYX AI by Midhun Krishnan (Windows Edition).
