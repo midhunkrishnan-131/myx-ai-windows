@@ -1,0 +1,6 @@
+{
+  "name": "MYX AI (Windows Edition)",
+  "description": "MYX AI by Midhun Krishnan — Discover. Detect. Defend. AI-Powered Cybersecurity Assessment, Vulnerability Management, Windows 10/11 System Auditing & Security Intelligence SaaS Platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

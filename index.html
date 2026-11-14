@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      (function() {
+        // Auto-bridge for VS Code Live Server (port 5500/5501) to live Vite/Node server on 3000
+        if (window.location.port === '5500' || window.location.port === '5501' || window.location.port === '5502') {
+          if (window.location.pathname.indexOf('/dist/') !== -1) return;
+          fetch('http://localhost:3000/api/v1/health')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d && d.status === 'ok') {
+                window.location.replace('http://localhost:3000' + window.location.hash);
+              } else {
+                window.location.replace('/dist/index.html' + window.location.hash);
+              }
+            })
+            .catch(function() {
+              window.location.replace('/dist/index.html' + window.location.hash);
+            });
+        }
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MYX AI (Windows Edition) — Discover. Detect. Defend.</title>
+    <meta name="description" content="MYX AI by Midhun Krishnan — Discover. Detect. Defend. AI-Powered Cybersecurity Assessment, Vulnerability Management, Windows 10/11 System Auditing & Security Intelligence SaaS Platform." />
+    <meta property="og:title" content="MYX AI (Windows Edition) — Discover. Detect. Defend." />
+    <meta property="og:description" content="MYX AI by Midhun Krishnan — Discover. Detect. Defend. AI-Powered Cybersecurity Assessment, Vulnerability Management, Windows 10/11 System Auditing & Security Intelligence SaaS Platform." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/assets/aistudio/MYX-AI-primary-vertical-2048x1818-transparent_803e553e.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/png" href="/assets/aistudio/MYX-AI-primary-vertical-2048x1818-transparent_803e553e.png" />
+    <link rel="apple-touch-icon" href="/assets/aistudio/MYX-AI-primary-vertical-2048x1818-transparent_803e553e.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  </head>
+  <body class="bg-[#0B0D10] text-[#F5F7FA] antialiased selection:bg-[#D6AE45]/30 selection:text-[#F5F7FA] overflow-x-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

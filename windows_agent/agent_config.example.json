@@ -1,0 +1,8 @@
+{
+  "server_base_url": "http://127.0.0.1:8000",
+  "agent_id": "agt-win11-001",
+  "agent_secret_token": "REPLACE_VIA_ENROLLMENT_EXCHANGE",
+  "hmac_signing_secret": "REPLACE_VIA_ENROLLMENT_EXCHANGE",
+  "heartbeat_interval_seconds": 60,
+  "verify_tls": true
+}
