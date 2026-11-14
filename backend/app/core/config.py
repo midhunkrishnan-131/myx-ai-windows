@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     MAX_SCANNER_UPLOAD_MB: int = 25
 
     GEMINI_API_KEY: str = ""
+    GEMINI_API_KEY_2: str = ""
+    GROQ_API_KEY: str = ""
     GEMINI_PRIMARY_MODEL: str = "gemini-2.5-flash"
     GEMINI_ADVANCED_MODEL: str = "gemini-2.5-pro"
     GEMINI_FAST_MODEL: str = "gemini-2.5-flash-lite"

@@ -161,7 +161,13 @@ async function startServer() {
       mode: 'LIVE_BACKEND',
       supported_local_os: ['Windows 10 (20H2+)', 'Windows 11 (21H2-24H2+)'],
       active_windows_agents: dbState.windowsAgents.filter((a) => a.status === 'ACTIVE').length,
-      gemini_configured: Boolean(process.env.GEMINI_API_KEY),
+      gemini_configured: Boolean(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_2),
+      ai_failover_configured: Boolean(process.env.GEMINI_API_KEY_2 || process.env.GROQ_API_KEY),
+      ai_providers_active: [
+        ...(process.env.GEMINI_API_KEY ? ['gemini_primary'] : []),
+        ...(process.env.GEMINI_API_KEY_2 ? ['gemini_backup'] : []),
+        ...(process.env.GROQ_API_KEY ? ['groq_backup'] : []),
+      ],
       timestamp: new Date().toISOString(),
     });
   });
@@ -540,7 +546,87 @@ async function startServer() {
     res.status(201).json(newFinding);
   });
 
-  // 9. AI Security Analyst & Copilot Endpoints (Live Gemini SDK + Grounded Fallback)
+  // --- Automated AI Key Rotation & Multi-Cloud Failover Engine ---
+  async function generateAiCompletionWithFailover(options: {
+    contents: string;
+    geminiModel?: string;
+    systemInstruction?: string;
+  }): Promise<{ text: string; provider: string; model: string } | null> {
+    const geminiModel = options.geminiModel || 'gemini-3-flash-preview';
+
+    // Tier 1: Primary Gemini Key
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const resp = await ai.models.generateContent({
+          model: geminiModel,
+          contents: options.contents,
+        });
+        if (resp.text && resp.text.trim()) {
+          return { text: resp.text.trim(), provider: 'gemini_primary', model: geminiModel };
+        }
+      } catch (err: any) {
+        console.warn(`[MYX AI Failover] Primary Gemini key failed (${err?.message || err}). Failing over to Gemini Backup Key #2...`);
+      }
+    }
+
+    // Tier 2: Backup Gemini Key
+    if (process.env.GEMINI_API_KEY_2) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY_2 });
+        const resp = await ai.models.generateContent({
+          model: geminiModel,
+          contents: options.contents,
+        });
+        if (resp.text && resp.text.trim()) {
+          return { text: resp.text.trim(), provider: 'gemini_backup', model: geminiModel };
+        }
+      } catch (err: any) {
+        console.warn(`[MYX AI Failover] Backup Gemini key failed (${err?.message || err}). Failing over to Groq Cloud...`);
+      }
+    }
+
+    // Tier 3: Groq Cloud Multi-Cloud Backup (openai/gpt-oss-120b)
+    if (process.env.GROQ_API_KEY) {
+      try {
+        const groqResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'openai/gpt-oss-120b',
+            messages: [
+              ...(options.systemInstruction
+                ? [{ role: 'system', content: options.systemInstruction }]
+                : []),
+              { role: 'user', content: options.contents },
+            ],
+            temperature: 0.3,
+            max_tokens: 1024,
+          }),
+        });
+        if (groqResp.ok) {
+          const groqData = (await groqResp.json()) as any;
+          const text = groqData.choices?.[0]?.message?.content;
+          if (text && text.trim()) {
+            return {
+              text: text.trim(),
+              provider: 'groq_backup',
+              model: 'openai/gpt-oss-120b (Groq)',
+            };
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[MYX AI Failover] Groq backup failed (${err?.message || err}). Falling back to deterministic synthesis.`);
+      }
+    }
+
+    return null;
+  }
+
+  // 9. AI Security Analyst & Copilot Endpoints (Automated Failover + Grounded Fallback)
   app.post('/api/v1/ai/analyst/message', async (req: Request, res: Response) => {
     const { sessionId, promptText, modelTier } = req.body as {
       sessionId: string;
@@ -560,26 +646,19 @@ async function startServer() {
     const attachedCodes = session?.attached_finding_codes || ['MYX-FND-2026-0041'];
 
     let aiSummaryText = `[Live Backend Grounded Analysis via ${modelName}] Evaluated your defensive query ("${promptText}") against attached findings (${attachedCodes.join(', ')}) and tenant-isolated RAG references.`;
-    let aiRiskInterpretation =
-      'Unauthenticated network services (RDP without NLA) and unencrypted secondary volumes present immediate lateral movement and physical data exposure risks.';
-    let recommendedRemediation =
-      '# Review and test in a non-production environment before applying:\nSet-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp" -Name "UserAuthentication" -Value 1 -Type DWord';
+    let activeModelName = modelName;
 
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const geminiResp = await ai.models.generateContent({
-          model: modelName,
-          contents: `You are the defensive AI Security Analyst for MYX AI by Midhun Krishnan (Windows Edition).
+    const aiResult = await generateAiCompletionWithFailover({
+      contents: `You are the defensive AI Security Analyst for MYX AI by Midhun Krishnan (Windows Edition).
 Provide a concise, strictly defensive analysis for the following user query grounded in findings ${attachedCodes.join(', ')}:
 Query: ${promptText}`,
-        });
-        if (geminiResp.text) {
-          aiSummaryText = geminiResp.text;
-        }
-      } catch {
-        // Fallback to deterministic grounded synthesis if key/quota unavailable
-      }
+      geminiModel: modelName,
+      systemInstruction: 'You are the defensive AI Security Analyst for MYX AI by Midhun Krishnan (Windows Edition). Provide strictly defensive, non-destructive guidance.',
+    });
+
+    if (aiResult) {
+      aiSummaryText = aiResult.text;
+      activeModelName = aiResult.model;
     }
 
     const latencyMs = Math.max(120, Date.now() - startMs);
@@ -597,7 +676,7 @@ Query: ${promptText}`,
             role: 'user' as const,
             content: promptText,
             model_tier: modelTier,
-            model_name: modelName,
+            model_name: activeModelName,
             latency_ms: 0,
             created_at: now,
           },
@@ -606,7 +685,7 @@ Query: ${promptText}`,
             role: 'assistant' as const,
             content: aiSummaryText,
             model_tier: modelTier,
-            model_name: modelName,
+            model_name: activeModelName,
             latency_ms: latencyMs,
             created_at: now,
             structured_response: {
@@ -692,19 +771,14 @@ Query: ${promptText}`,
     let explanation = `MYX AI Copilot analyzed ${finding.finding_code} (${finding.title}) on asset ${finding.affected_asset}. Applying the non-destructive hardening script below mitigates ${finding.cwe_id} while preserving service availability.`;
     let script = `# Review and test in a non-production environment before applying:\n# Target Finding: ${finding.finding_code} (${finding.title})\n${finding.remediation_guidance}`;
 
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const geminiResp = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: `Provide a concise 2-sentence defensive root-cause and remediation explanation for finding ${finding.finding_code}: "${finding.title}" on asset ${finding.affected_asset} (${finding.cwe_id}).`,
-        });
-        if (geminiResp.text) {
-          explanation = geminiResp.text;
-        }
-      } catch {
-        // Fallback to grounded remediation synthesis
-      }
+    let activeModel = 'gemini-3-flash-preview';
+    const aiResult = await generateAiCompletionWithFailover({
+      contents: `Provide a concise 2-sentence defensive root-cause and remediation explanation for finding ${finding.finding_code}: "${finding.title}" on asset ${finding.affected_asset} (${finding.cwe_id}).`,
+      geminiModel: 'gemini-3-flash-preview',
+    });
+    if (aiResult) {
+      explanation = aiResult.text;
+      activeModel = aiResult.model;
     }
 
     res.json({
@@ -716,7 +790,7 @@ Query: ${promptText}`,
         `Verify ${finding.affected_endpoint} matches hardened baseline state`,
         'Attach verification output and mark Retest as PASSED in Findings Ledger',
       ],
-      model: 'gemini-3-flash-preview',
+      model: activeModel,
       latencyMs: Math.max(110, Date.now() - startMs),
     });
   });
@@ -730,19 +804,14 @@ Query: ${promptText}`,
     const startMs = Date.now();
     let generatedParagraph = `\n\n### MYX AI Grounded Synthesis (${sectionTitle || 'Section Analysis'})\nVerified telemetry across enrolled Windows 10/11 endpoints and authorized web portals confirms that remediating **MYX-FND-2026-0041** (RDP NLA enforcement), **MYX-FND-2026-0042** (BitLocker XTS-AES-256 volume encryption), and **MYX-FND-2026-0043** (CSP script-src hardening) reduces composite organizational attack surface by **64%**. All findings are backed by immutable SHA-256 evidence artifacts.`;
 
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const geminiResp = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: `Write a concise, formal 1-paragraph cybersecurity report addition for section "${sectionTitle}" in MYX AI by Midhun Krishnan (Windows Edition), referencing findings MYX-FND-2026-0041 (RDP NLA) and MYX-FND-2026-0042 (BitLocker D:).`,
-        });
-        if (geminiResp.text) {
-          generatedParagraph = `\n\n### MYX AI Grounded Synthesis\n${geminiResp.text.trim()}`;
-        }
-      } catch {
-        // Fallback to deterministic grounded paragraph
-      }
+    let activeModel = 'gemini-3-flash-preview';
+    const aiResult = await generateAiCompletionWithFailover({
+      contents: `Write a concise, formal 1-paragraph cybersecurity report addition for section "${sectionTitle}" in MYX AI by Midhun Krishnan (Windows Edition), referencing findings MYX-FND-2026-0041 (RDP NLA) and MYX-FND-2026-0042 (BitLocker D:).`,
+      geminiModel: 'gemini-3-flash-preview',
+    });
+    if (aiResult) {
+      generatedParagraph = `\n\n### MYX AI Grounded Synthesis\n${aiResult.text}`;
+      activeModel = aiResult.model;
     }
 
     dbState.reports = dbState.reports.map((r) => {

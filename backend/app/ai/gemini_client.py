@@ -63,3 +63,20 @@ def select_gemini_model_for_tier(tier: str) -> str:
     if tier_upper == "ADVANCED":
         return settings.GEMINI_ADVANCED_MODEL
     return settings.GEMINI_PRIMARY_MODEL
+
+
+def get_ai_failover_pool() -> list[dict]:
+    """
+    Returns ordered failover pool:
+    1. Primary Gemini Key
+    2. Backup Gemini Key #2
+    3. Groq Cloud Backup
+    """
+    pool = []
+    if settings.GEMINI_API_KEY:
+        pool.append({"provider": "gemini_primary", "key": settings.GEMINI_API_KEY, "model": settings.GEMINI_PRIMARY_MODEL})
+    if settings.GEMINI_API_KEY_2:
+        pool.append({"provider": "gemini_backup", "key": settings.GEMINI_API_KEY_2, "model": settings.GEMINI_PRIMARY_MODEL})
+    if settings.GROQ_API_KEY:
+        pool.append({"provider": "groq_backup", "key": settings.GROQ_API_KEY, "model": "openai/gpt-oss-120b"})
+    return pool

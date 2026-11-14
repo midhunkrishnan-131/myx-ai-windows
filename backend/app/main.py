@@ -58,7 +58,13 @@ def health_check():
         "mode": "LIVE_FASTAPI",
         "supported_local_os": ["Windows 10 (20H2+)", "Windows 11 (21H2-24H2+)"],
         "database": "sqlite_connected" if "sqlite" in settings.DATABASE_URL else "postgres_connected",
-        "gemini_configured": bool(settings.GEMINI_API_KEY),
+        "gemini_configured": bool(settings.GEMINI_API_KEY or settings.GEMINI_API_KEY_2),
+        "ai_failover_configured": bool(settings.GEMINI_API_KEY_2 or settings.GROQ_API_KEY),
+        "ai_providers_active": [
+            *(["gemini_primary"] if settings.GEMINI_API_KEY else []),
+            *(["gemini_backup"] if settings.GEMINI_API_KEY_2 else []),
+            *(["groq_backup"] if settings.GROQ_API_KEY else []),
+        ],
     }
 
 
