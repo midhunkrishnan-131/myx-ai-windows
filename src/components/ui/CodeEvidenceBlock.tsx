@@ -3,7 +3,7 @@ import { Check, Copy, ShieldAlert, Lock } from 'lucide-react';
 
 export interface CodeEvidenceBlockProps {
   title?: string;
-  code: string;
+  code?: string | null;
   language?: string;
   isRemediationSnippet?: boolean;
   secretsRedacted?: boolean;
@@ -11,24 +11,28 @@ export interface CodeEvidenceBlockProps {
 
 export const CodeEvidenceBlock: React.FC<CodeEvidenceBlockProps> = ({
   title = 'Technical Evidence / Configuration Output',
-  code,
+  code = '',
   language = 'text',
   isRemediationSnippet = false,
   secretsRedacted = true,
 }) => {
   const [copied, setCopied] = useState(false);
 
+  const safeCode = typeof code === 'string' ? code : (code != null ? String(code) : '');
+
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(safeCode);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      }
     } catch {
       setCopied(false);
     }
   };
 
-  const lines = code.split('\n');
+  const lines = safeCode ? safeCode.split('\n') : ['(No evidence recorded)'];
 
   return (
     <div className="bg-[#080A0D] border border-[#29313B] rounded-lg overflow-hidden">

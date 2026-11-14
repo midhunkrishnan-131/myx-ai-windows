@@ -1,7 +1,8 @@
 import React from 'react';
 
-export const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
-  const normalized = status.toUpperCase();
+export const StatusBadge: React.FC<{ status?: string | null }> = ({ status = '' }) => {
+  const safeStatus = typeof status === 'string' ? status : (status ? String(status) : 'UNKNOWN');
+  const normalized = safeStatus.toUpperCase();
 
   let colorClass = 'bg-[#38BDF8]/15 text-[#38BDF8] border-[#38BDF8]/40';
 

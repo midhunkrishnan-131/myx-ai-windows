@@ -1,5 +1,18 @@
-import React, { useState } from 'react';
-import { Globe, Play, PlusCircle, ShieldCheck, CheckCircle2, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import {
+  Globe,
+  Play,
+  PlusCircle,
+  ShieldCheck,
+  CheckCircle2,
+  Loader2,
+  Activity,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Layers,
+  Download,
+} from 'lucide-react';
 import { useSystemStatus } from '../context/SystemStatusContext';
 import { useAuth } from '../hooks/useAuth';
 import { useRBAC } from '../hooks/useRBAC';
@@ -31,6 +44,13 @@ export const WebsiteAssessmentPage: React.FC = () => {
   const webTargets = targets.filter((t) => t.target_type === 'URL' || t.target_type === 'DOMAIN');
   const [selectedTargetId, setSelectedTargetId] = useState<string>(webTargets[0]?.id || '');
 
+  // Keep selectedTargetId synced when targets load or change
+  useEffect(() => {
+    if ((!selectedTargetId || !webTargets.some((t) => t.id === selectedTargetId)) && webTargets.length > 0) {
+      setSelectedTargetId(webTargets[0].id);
+    }
+  }, [webTargets, selectedTargetId]);
+
   // Quick Live Website URL Assessment state
   const [quickScanUrl, setQuickScanUrl] = useState('');
   const [isScanning, setIsScanning] = useState(false);
@@ -46,12 +66,20 @@ export const WebsiteAssessmentPage: React.FC = () => {
   const [scanMessage, setScanMessage] = useState<string | null>(null);
 
   const selectedTarget = targets.find((t) => t.id === selectedTargetId);
-  const latestWebsiteRun =
-    liveScanResult ||
-    (selectedTargetId ? assessments.find((a) => a.module_type === 'WEBSITE' && a.target_id === selectedTargetId) : null) ||
-    assessments.find((a) => a.module_type === 'WEBSITE' && !a.is_demo_preview) ||
-    null;
 
+  // Derive the active assessment run to display:
+  // If a live scan was performed, show that live scan result.
+  // If an error occurred, do NOT fall back to demo data.
+  // Only if no scan has run and no error exists, show selected target's previous run if any.
+  const latestWebsiteRun: AssessmentRun | null =
+    liveScanResult ||
+    (registrationError
+      ? null
+      : selectedTargetId
+      ? assessments.find((a) => a.module_type === 'WEBSITE' && a.target_id === selectedTargetId) || null
+      : null);
+
+  // Quick Live Website Scan Handler
   const handleQuickScan = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegistrationError(null);
@@ -69,6 +97,7 @@ export const WebsiteAssessmentPage: React.FC = () => {
 
     const ssrfCheck = validateTargetSsrfGuard(formatted, labTargetsAllowed, true);
     if (!ssrfCheck.allowed) {
+      setLiveScanResult(null);
       setRegistrationError(`SSRF Guard Blocked Target: ${ssrfCheck.blockedReason}`);
       return;
     }
@@ -76,25 +105,89 @@ export const WebsiteAssessmentPage: React.FC = () => {
     setIsScanning(true);
     try {
       const res = await assessmentsService.scanWebsiteUrl(formatted, user?.email);
-      if (res.data) {
-        const runData = (res.data as any).run || res.data;
+      if (res.data && res.data.run) {
+        const runData = res.data.run;
         addAssessmentRun(runData);
         setLiveScanResult(runData);
-        // Refresh bootstrap state across all pages (Dashboard, Findings, etc.)
         await recheckBackendConnection();
         setScanMessage(
           `Live assessment completed for ${runData.target_display}! Security Score: ${runData.risk_score}/100 · ${runData.summary.failed} Failed, ${runData.summary.warnings} Warnings, ${runData.summary.passed} Passed.`
         );
-      } else if (res.error) {
-        setRegistrationError(`Scan Error: ${res.error.message || 'Failed to scan website'}`);
+      } else {
+        setLiveScanResult(null);
+        setRegistrationError('Scan returned an empty or malformed response from the backend.');
       }
     } catch (err: any) {
+      setLiveScanResult(null);
       setRegistrationError(`Scan Failed: ${err?.message || 'Network connection failed'}`);
     } finally {
       setIsScanning(false);
     }
   };
 
+  // Run Assessment on Selected Authorized Target
+  const handleRunWebsiteAssessment = async () => {
+    setRegistrationError(null);
+    setScanMessage(null);
+
+    if (!can('assessments:run')) {
+      setRegistrationError('RBAC Restriction: VIEWER role is read-only and cannot trigger assessments.');
+      return;
+    }
+
+    if (!selectedTarget || !selectedTarget.target_value || !selectedTarget.target_value.trim()) {
+      setRegistrationError('Target value cannot be empty. Select or register a valid target with a non-empty target URL first.');
+      return;
+    }
+
+    if (selectedTarget.verification_status !== 'VERIFIED' || !selectedTarget.allowlisted) {
+      setRegistrationError(
+        `Target '${selectedTarget.target_value}' is currently ${selectedTarget.verification_status}. Complete ownership verification before running a website assessment.`
+      );
+      return;
+    }
+
+    let canonicalUrl = selectedTarget.target_value.trim();
+    if (!canonicalUrl.startsWith('http://') && !canonicalUrl.startsWith('https://')) {
+      canonicalUrl = `https://${canonicalUrl}`;
+    }
+
+    const ssrfCheck = validateTargetSsrfGuard(canonicalUrl, labTargetsAllowed, true);
+    if (!ssrfCheck.allowed) {
+      setLiveScanResult(null);
+      setRegistrationError(`SSRF Guard Blocked Target: ${ssrfCheck.blockedReason}`);
+      return;
+    }
+
+    setIsScanning(true);
+    try {
+      const res = await assessmentsService.runWebsiteAssessment(
+        selectedTarget.id,
+        canonicalUrl,
+        user?.email
+      );
+
+      if (res.data && res.data.run) {
+        const runData = res.data.run;
+        addAssessmentRun(runData);
+        setLiveScanResult(runData);
+        await recheckBackendConnection();
+        setScanMessage(
+          `${runData.is_demo_preview ? '[DEMO PREVIEW]' : '[LIVE SCAN]'} Assessment completed for ${runData.target_display}! Security Score: ${runData.risk_score}/100 · ${runData.summary.failed} Failed, ${runData.summary.warnings} Warnings, ${runData.summary.passed} Passed.`
+        );
+      } else {
+        setLiveScanResult(null);
+        setRegistrationError('Backend did not return valid assessment run data.');
+      }
+    } catch (err: any) {
+      setLiveScanResult(null);
+      setRegistrationError(`Assessment Failed: ${err?.message || 'Server connection error'}`);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  // Register New Target Handler
   const handleRegisterTarget = (e: React.FormEvent) => {
     e.preventDefault();
     setRegistrationError(null);
@@ -146,43 +239,25 @@ export const WebsiteAssessmentPage: React.FC = () => {
     );
   };
 
-  const handleRunWebsiteAssessment = () => {
-    setRegistrationError(null);
-    if (!can('assessments:run')) {
-      setRegistrationError('RBAC Restriction: VIEWER role is read-only and cannot trigger assessments.');
-      return;
-    }
-    if (!selectedTarget) {
-      setRegistrationError('Select a registered target first.');
-      return;
-    }
-    if (selectedTarget.verification_status !== 'VERIFIED' || !selectedTarget.allowlisted) {
-      setRegistrationError(
-        `Target '${selectedTarget.target_value}' is currently ${selectedTarget.verification_status}. Complete ownership verification before running a website assessment.`
-      );
-      return;
-    }
-
-    const baseTemplate = assessments.find((a) => a.module_type === 'WEBSITE')!;
-    const newRun = {
-      ...baseTemplate,
-      id: `asm-web-${Date.now()}`,
-      target_id: selectedTarget.id,
-      target_display: selectedTarget.target_value,
-      started_at: new Date().toISOString(),
-      completed_at: new Date().toISOString(),
-    };
-    addAssessmentRun(newRun);
-    setScanMessage(
-      `[DEMO / SAMPLE PREVIEW DATA] Executed non-destructive HTTP security header, cookie, and redirect inspection for ${selectedTarget.target_value}.`
-    );
-  };
+  // Dynamic Header Status Badge logic
+  const headerStatus = registrationError
+    ? 'SCAN FAILED'
+    : liveScanResult
+    ? liveScanResult.is_demo_preview
+      ? 'DEMO / SAMPLE PREVIEW MODE'
+      : 'LIVE ASSESSMENT ACTIVE'
+    : latestWebsiteRun && !latestWebsiteRun.is_demo_preview
+    ? 'LIVE ASSESSMENT ACTIVE'
+    : latestWebsiteRun?.is_demo_preview
+    ? 'DEMO / SAMPLE PREVIEW MODE'
+    : 'LIVE AUDIT READY';
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#29313B]">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#F5F7FA] tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-bold text-[#F5F7FA] tracking-tight flex items-center gap-2">
+            <Globe className="w-6 h-6 text-[#D6AE45]" />
             Website Security Assessment
           </h1>
           <p className="text-xs sm:text-sm text-[#A7B0BC] mt-1">
@@ -190,7 +265,7 @@ export const WebsiteAssessmentPage: React.FC = () => {
             validation, and server banner exposure
           </p>
         </div>
-        <StatusBadge status="DEMO / SAMPLE PREVIEW MODE" />
+        <StatusBadge status={headerStatus} />
       </div>
 
       <AuthorizationBanner scopeNote="Passive HTTP header, cookie, and TLS configuration inspection only. Never sends SQLi, XSS, fuzzing payloads, or DoS traffic. Note: Passive header analysis does not replace authenticated DAST or source code review." />
@@ -206,6 +281,7 @@ export const WebsiteAssessmentPage: React.FC = () => {
               <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#A7B0BC]" />
               <input
                 type="text"
+                placeholder="e.g. https://example.com or https://github.com"
                 value={quickScanUrl}
                 onChange={(e) => setQuickScanUrl(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs font-mono text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
@@ -215,25 +291,127 @@ export const WebsiteAssessmentPage: React.FC = () => {
               type="submit"
               variant="primary"
               disabled={isScanning || !can('assessments:run')}
-              icon={isScanning ? <Loader2 className="w-4 h-4 animate-spin text-[#0B0D10]" /> : <Play className="w-4 h-4" />}
+              icon={
+                isScanning ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-[#0B0D10]" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )
+              }
               className="w-full sm:w-auto shrink-0"
             >
               {isScanning ? 'Scanning Website...' : 'Scan Website Now'}
             </Button>
           </div>
-          <div className="flex flex-wrap items-center justify-between text-[11px] text-[#A7B0BC] gap-2">
-            <span>Real-time passive audit: Content-Security-Policy · HSTS · X-Frame-Options · X-Content-Type-Options · Server Banners · Referrer-Policy</span>
-            <span className="font-mono text-[#38BDF8]">SafeOutboundClient (10s Timeout · Follows Redirects)</span>
+          <div className="flex flex-wrap items-center justify-between text-[11px] text-[#A7B0BC] gap-2 pt-1">
+            <span>
+              Real-time passive audit: Content-Security-Policy · HSTS · X-Frame-Options · X-Content-Type-Options · Server Banners · Referrer-Policy
+            </span>
+            <span className="font-mono text-[#38BDF8]">
+              SafeOutboundClient (10s Timeout · Follows Redirects · SSRF Guard)
+            </span>
           </div>
         </form>
       </Card>
 
-      {registrationError && <ErrorState message={registrationError} />}
+      {registrationError && (
+        <ErrorState
+          title="Website Assessment Failed"
+          message={registrationError}
+          onRetry={() => {
+            setRegistrationError(null);
+            if (quickScanUrl.trim()) {
+              handleQuickScan({ preventDefault: () => {} } as any);
+            }
+          }}
+        />
+      )}
 
       {scanMessage && (
         <div className="p-3.5 bg-[#38BDF8]/10 border border-[#38BDF8]/30 rounded-lg flex items-center gap-2.5 text-xs text-[#38BDF8]">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{scanMessage}</span>
+        </div>
+      )}
+
+      {/* Summary KPI Cards if a valid run exists */}
+      {latestWebsiteRun && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="p-4 bg-[#101318] border border-[#29313B] rounded-lg">
+            <div className="text-[11px] font-medium text-[#A7B0BC] flex items-center justify-between">
+              <span>Security Score</span>
+              <Activity className="w-3.5 h-3.5 text-[#38BDF8]" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span
+                className={`text-2xl font-bold font-mono ${
+                  (latestWebsiteRun.risk_score ?? 0) >= 80
+                    ? 'text-[#22C55E]'
+                    : (latestWebsiteRun.risk_score ?? 0) >= 50
+                    ? 'text-[#F59E0B]'
+                    : 'text-[#EF4444]'
+                }`}
+              >
+                {latestWebsiteRun.risk_score ?? 0}
+              </span>
+              <span className="text-xs text-[#737E8C]">/ 100</span>
+            </div>
+            <div className="text-[11px] text-[#A7B0BC] mt-1">
+              {(latestWebsiteRun.risk_score ?? 0) >= 80
+                ? 'Strong Header Posture'
+                : (latestWebsiteRun.risk_score ?? 0) >= 50
+                ? 'Moderate Deficiencies'
+                : 'High Risk Configuration'}
+            </div>
+          </div>
+
+          <div className="p-4 bg-[#101318] border border-[#29313B] rounded-lg">
+            <div className="text-[11px] font-medium text-[#A7B0BC] flex items-center justify-between">
+              <span>Passed Controls</span>
+              <CheckCircle className="w-3.5 h-3.5 text-[#22C55E]" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-mono text-[#22C55E]">
+                {latestWebsiteRun.summary?.passed ?? 0}
+              </span>
+              <span className="text-xs text-[#737E8C]">
+                / {latestWebsiteRun.summary?.total_checks ?? (latestWebsiteRun.results?.length || 0)} checks
+              </span>
+            </div>
+            <div className="text-[11px] text-[#A7B0BC] mt-1">Properly Enforced Headers</div>
+          </div>
+
+          <div className="p-4 bg-[#101318] border border-[#29313B] rounded-lg">
+            <div className="text-[11px] font-medium text-[#A7B0BC] flex items-center justify-between">
+              <span>Warnings</span>
+              <AlertTriangle className="w-3.5 h-3.5 text-[#F59E0B]" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-mono text-[#F59E0B]">
+                {latestWebsiteRun.summary?.warnings ?? 0}
+              </span>
+              <span className="text-xs text-[#737E8C]">warnings</span>
+            </div>
+            <div className="text-[11px] text-[#A7B0BC] mt-1">Permissive or Sub-optimal</div>
+          </div>
+
+          <div className="p-4 bg-[#101318] border border-[#29313B] rounded-lg">
+            <div className="text-[11px] font-medium text-[#A7B0BC] flex items-center justify-between">
+              <span>Failed Controls</span>
+              <XCircle className="w-3.5 h-3.5 text-[#EF4444]" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span
+                className={`text-2xl font-bold font-mono ${
+                  (latestWebsiteRun.summary?.failed ?? 0) > 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'
+                }`}
+              >
+                {latestWebsiteRun.summary?.failed ?? 0}
+              </span>
+              <span className="text-xs text-[#737E8C]">missing headers</span>
+            </div>
+            <div className="text-[11px] text-[#A7B0BC] mt-1">High Severity Exposures</div>
+          </div>
         </div>
       )}
 
@@ -284,11 +462,21 @@ export const WebsiteAssessmentPage: React.FC = () => {
               </div>
               <Button
                 variant="primary"
-                icon={<Play className="w-4 h-4" />}
-                disabled={!can('assessments:run')}
+                icon={
+                  isScanning ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-[#0B0D10]" />
+                  ) : (
+                    <Play className="w-4 h-4" />
+                  )
+                }
+                disabled={
+                  isScanning ||
+                  !can('assessments:run') ||
+                  selectedTarget?.verification_status !== 'VERIFIED'
+                }
                 onClick={handleRunWebsiteAssessment}
               >
-                Run Passive Website Assessment
+                {isScanning ? 'Executing Passive Audit...' : 'Run Passive Website Assessment'}
               </Button>
             </div>
           </div>
@@ -307,6 +495,7 @@ export const WebsiteAssessmentPage: React.FC = () => {
               <input
                 id="new-web-url"
                 type="text"
+                placeholder="https://app.example.com"
                 value={newUrlValue}
                 onChange={(e) => setNewUrlValue(e.target.value)}
                 className="w-full px-3 py-1.5 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs font-mono text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
@@ -320,6 +509,7 @@ export const WebsiteAssessmentPage: React.FC = () => {
               <input
                 id="new-web-name"
                 type="text"
+                placeholder="Production Customer App"
                 value={newDisplayName}
                 onChange={(e) => setNewDisplayName(e.target.value)}
                 className="w-full px-3 py-1.5 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
@@ -396,61 +586,94 @@ export const WebsiteAssessmentPage: React.FC = () => {
             <Globe className="w-10 h-10 text-[#737E8C]/50 mx-auto mb-2" />
             <h3 className="text-sm font-semibold text-[#F5F7FA]">No Website Scan Executed Yet</h3>
             <p className="text-xs text-[#A7B0BC] max-w-md mx-auto">
-              Enter any website URL in the quick scan bar above and click <strong>Scan Website Now</strong> to inspect live HTTP headers, CSP, HSTS, and clickjacking defenses.
+              Enter any website URL in the quick scan bar above and click{' '}
+              <strong>Scan Website Now</strong> to inspect live HTTP headers, CSP, HSTS, and clickjacking defenses.
             </p>
           </div>
         </Card>
       ) : (
         <Card
           title={`Inspected Controls — ${latestWebsiteRun.target_display}`}
-          subtitle="Live Real-Time HTTP Security Header & Configuration Evidence"
+          subtitle={
+            latestWebsiteRun.is_demo_preview
+              ? 'Sample Baseline Data — Baseline simulation for offline sample target'
+              : 'Live Real-Time HTTP Security Header & TLS Configuration Evidence'
+          }
           headerAction={
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-[#A7B0BC]">Security Score:</span>
-              <span
-                className={`px-2.5 py-0.5 rounded text-xs font-bold font-mono border ${
-                  latestWebsiteRun.risk_score >= 80
-                    ? 'text-[#22C55E] bg-[#22C55E]/10 border-[#22C55E]/30'
-                    : latestWebsiteRun.risk_score >= 50
+            <div className="flex flex-wrap items-center gap-2.5">
+              {latestWebsiteRun.is_demo_preview ? (
+                <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30 font-mono">
+                  DEMO / SAMPLE PREVIEW
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-[#22C55E]/15 text-[#22C55E] border border-[#22C55E]/30 font-mono">
+                  LIVE SCAN RESULT
+                </span>
+              )}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-[#A7B0BC]">Score:</span>
+                <span
+                  className={`px-2.5 py-0.5 rounded text-xs font-bold font-mono border ${
+                    (latestWebsiteRun.risk_score ?? 0) >= 80
+                      ? 'text-[#22C55E] bg-[#22C55E]/10 border-[#22C55E]/30'
+                      : (latestWebsiteRun.risk_score ?? 0) >= 50
                       ? 'text-[#F59E0B] bg-[#F59E0B]/10 border-[#F59E0B]/30'
                       : 'text-[#EF4444] bg-[#EF4444]/10 border-[#EF4444]/30'
-                }`}
+                  }`}
+                >
+                  {latestWebsiteRun.risk_score ?? 0}/100
+                </span>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Download className="w-3.5 h-3.5 text-[#D6AE45]" />}
+                onClick={async () => {
+                  try {
+                    await assessmentsService.downloadAssessmentPdf(
+                      latestWebsiteRun.id,
+                      `MYX-Report-${latestWebsiteRun.id}.pdf`
+                    );
+                  } catch (err: any) {
+                    setRegistrationError(`PDF Download failed: ${err?.message || 'Error generating PDF'}`);
+                  }
+                }}
               >
-                {latestWebsiteRun.risk_score}/100
-              </span>
+                Download PDF Report
+              </Button>
             </div>
           }
         >
           <div className="space-y-4">
-            {latestWebsiteRun.results.map((check) => (
+            {(latestWebsiteRun.results || []).map((check, idx) => (
               <div
-                key={check.id}
+                key={check.id || check.control_id || check.check_code || `check-${idx}`}
                 className="p-4 bg-[#101318] border border-[#29313B] rounded-lg space-y-3"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5">
-                    <span className="font-mono text-xs text-[#38BDF8]">{check.check_code}</span>
+                    <span className="font-mono text-xs text-[#38BDF8]">{check.check_code || check.control_id}</span>
                     <h3 className="text-sm font-semibold text-[#F5F7FA]">{check.check_title}</h3>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-[#A7B0BC]">
-                      Confidence: {check.confidence}
+                      Confidence: {check.confidence || 'Confirmed'}
                     </span>
-                    <SeverityBadge severity={check.severity} />
-                    <StatusBadge status={check.status} />
+                    <SeverityBadge severity={check.severity || 'Informational'} />
+                    <StatusBadge status={check.status || 'INFO'} />
                   </div>
                 </div>
 
                 <CodeEvidenceBlock
-                  title={`Sanitized HTTP Header Evidence (${check.category})`}
-                  code={check.raw_evidence}
+                  title={`Sanitized HTTP Header Evidence (${check.category || 'General'})`}
+                  code={check.raw_evidence || check.actual_header_observed || '(No evidence recorded)'}
                   language="http"
                   secretsRedacted
                 />
 
                 <div className="text-xs text-[#A7B0BC]">
                   <span className="font-semibold text-[#F5F7FA]">Defensive Remediation: </span>
-                  {check.remediation_text}
+                  {check.remediation_text || check.remediation_recommendation || 'No remediation required.'}
                 </div>
               </div>
             ))}

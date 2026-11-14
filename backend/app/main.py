@@ -14,6 +14,12 @@ from app.core.brand import (
 )
 from app.core.config import settings
 from app.database.init_db import init_database_and_seeds
+from app.routers.assessments import (
+    router as assessments_router,
+    IN_MEMORY_TARGETS,
+    IN_MEMORY_ASSESSMENTS,
+    IN_MEMORY_FINDINGS,
+)
 
 app = FastAPI(
     title=f"{BRAND_FULL_TITLE} ({BRAND_EDITION_NAME}) API",
@@ -22,6 +28,8 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url="/api/redoc",
 )
+
+app.include_router(assessments_router)
 
 @app.on_event("startup")
 def on_startup():
@@ -86,4 +94,27 @@ def update_platform_settings(payload: dict):
     if isinstance(payload.get("maxConcurrentScans"), int):
         _SETTINGS_STATE["maxConcurrentScans"] = max(1, min(10, payload["maxConcurrentScans"]))
     return {"settings": _SETTINGS_STATE}
+
+
+@app.get("/api/v1/bootstrap", tags=["Bootstrap State"])
+def get_bootstrap_state():
+    return {
+        "settings": _SETTINGS_STATE,
+        "targets": IN_MEMORY_TARGETS,
+        "assessments": IN_MEMORY_ASSESSMENTS,
+        "windowsAgents": [],
+        "windowsInventoryByAgent": {},
+        "windowsPostureByAgent": {},
+        "windowsSockets": [],
+        "wifiNetworks": [],
+        "findings": IN_MEMORY_FINDINGS,
+        "aiSessions": [],
+        "ragDocuments": [],
+        "reports": [],
+        "externalImports": [],
+        "integrations": [],
+        "orgUsers": [],
+        "auditLogs": [],
+    }
+
 

@@ -358,9 +358,13 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const addAssessmentRun = (run: AssessmentRun) => {
+    const payload = {
+      ...run,
+      target_value: run.target_value || run.target_display || '',
+    };
     setAssessments((prev) => [run, ...prev]);
     void apiClient
-      .request('/assessments/run', { method: 'POST', body: JSON.stringify(run) })
+      .request('/assessments/run', { method: 'POST', body: JSON.stringify(payload) })
       .catch(() => {});
   };
 

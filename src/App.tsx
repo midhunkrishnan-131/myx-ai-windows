@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { SystemStatusProvider } from './context/SystemStatusContext';
 import { AppShell } from './components/layout/AppShell';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 import { DashboardPage } from './pages/DashboardPage';
 import { WebsiteAssessmentPage } from './pages/WebsiteAssessmentPage';
@@ -43,7 +44,8 @@ export default function App() {
               path="/*"
               element={
                 <AppShell>
-                  <Routes>
+                  <ErrorBoundary fallbackTitle="Security Platform Navigation Error">
+                    <Routes>
                     <Route path="/" element={<Navigate to="/dashboard" replace />} />
                     <Route
                       path="/dashboard"
@@ -183,7 +185,8 @@ export default function App() {
                     />
                     <Route path="*" element={<Navigate to="/dashboard" replace />} />
                   </Routes>
-                </AppShell>
+                </ErrorBoundary>
+              </AppShell>
               }
             />
           </Routes>

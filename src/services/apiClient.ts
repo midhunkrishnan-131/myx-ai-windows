@@ -153,34 +153,65 @@ class CentralizedApiClient {
     const fullUrl = `${this.getBaseUrl()}${endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`}`;
 
     if (this.targetMode !== 'OFFLINE_SANDBOX') {
+      let response: Response;
       try {
-        const response = await fetch(fullUrl, {
+        response = await fetch(fullUrl, {
           ...options,
           method,
           headers,
           credentials: 'include',
         });
-
-        const csrfHeader = response.headers.get('X-CSRF-Token');
-        if (csrfHeader) {
-          this.csrfToken = csrfHeader;
-        }
-
-        if (response.ok) {
-          this.backendReachable = true;
-          const json = (await response.json()) as T;
+      } catch {
+        this.backendReachable = false;
+        if (previewFallbackFactory) {
+          const fallbackData = await previewFallbackFactory();
           return {
-            data: json,
+            data: fallbackData,
             meta: {
-              backend_connected: true,
-              is_demo_preview: false,
+              backend_connected: false,
+              is_demo_preview: true,
               timestamp: new Date().toISOString(),
               endpoint: `${method} ${ENV_CONFIG.API_V1_PREFIX}${endpointPath}`,
             },
           };
         }
-      } catch {
-        this.backendReachable = false;
+        throw new Error(
+          `Backend (${fullUrl}) is not connected. Switch to Integrated Backend or start the FastAPI server.`
+        );
+      }
+
+      const csrfHeader = response.headers.get('X-CSRF-Token');
+      if (csrfHeader) {
+        this.csrfToken = csrfHeader;
+      }
+
+      this.backendReachable = true;
+
+      if (response.ok) {
+        const json = (await response.json()) as T;
+        return {
+          data: json,
+          meta: {
+            backend_connected: true,
+            is_demo_preview: false,
+            timestamp: new Date().toISOString(),
+            endpoint: `${method} ${ENV_CONFIG.API_V1_PREFIX}${endpointPath}`,
+          },
+        };
+      } else {
+        // Backend is connected and responded with an error (e.g. 400, 403, 404, 502)
+        let errorPayload: any = null;
+        try {
+          errorPayload = await response.json();
+        } catch {
+          errorPayload = { message: `HTTP ${response.status} ${response.statusText}` };
+        }
+        const errorMessage =
+          errorPayload?.message ||
+          errorPayload?.detail ||
+          errorPayload?.error ||
+          `Request failed with status ${response.status}`;
+        throw new Error(errorMessage);
       }
     }
 

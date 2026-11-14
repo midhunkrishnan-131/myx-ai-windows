@@ -64,6 +64,15 @@ export interface AssessmentCheckResult {
   confidence: ConfidenceLevel;
   raw_evidence: string;
   remediation_text: string;
+  control_id?: string;
+  weight?: number;
+  points_earned?: number;
+  points_deducted?: number;
+  actual_header_observed?: string;
+  expected_configuration?: string;
+  technical_explanation?: string;
+  remediation_recommendation?: string;
+  cwe_id?: string;
 }
 
 export interface AssessmentRun {
@@ -71,6 +80,7 @@ export interface AssessmentRun {
   organization_id: string;
   target_id: string | null;
   target_display: string;
+  target_value?: string;
   module_type: AssessmentModuleType;
   status: AssessmentRunStatus;
   initiated_by_email: string;
