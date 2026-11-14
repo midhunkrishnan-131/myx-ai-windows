@@ -62,18 +62,18 @@ const dbState = {
     maxConcurrentScans: 3,
     updatedAt: new Date().toISOString(),
   } as PlatformSettingsState,
-  targets: [...INITIAL_AUTHORIZED_TARGETS],
-  assessments: [...INITIAL_ASSESSMENT_RUNS],
-  windowsAgents: [...INITIAL_WINDOWS_AGENTS],
-  windowsInventoryByAgent: { ...INITIAL_WINDOWS_INVENTORY_BY_AGENT },
-  windowsPostureByAgent: { ...INITIAL_WINDOWS_POSTURE_BY_AGENT },
-  windowsSockets: [...INITIAL_WINDOWS_SOCKETS],
-  wifiNetworks: [...INITIAL_WIFI_NETWORKS],
-  findings: [...INITIAL_FINDINGS],
+  targets: [] as AuthorizedTarget[],
+  assessments: [] as AssessmentRun[],
+  windowsAgents: [] as WindowsAgentRecord[],
+  windowsInventoryByAgent: {} as Record<string, WindowsSystemInventory>,
+  windowsPostureByAgent: {} as Record<string, WindowsPostureCheck[]>,
+  windowsSockets: [] as WindowsListeningSocket[],
+  wifiNetworks: [] as WifiNetworkAuditEntry[],
+  findings: [] as any[],
   aiSessions: [...INITIAL_AI_CONVERSATIONS],
   ragDocuments: [...INITIAL_RAG_DOCUMENTS],
-  reports: [...INITIAL_REPORTS],
-  externalImports: [...INITIAL_EXTERNAL_IMPORTS],
+  reports: [] as SecurityReport[],
+  externalImports: [] as ExternalImportRecord[],
   integrations: INITIAL_INTEGRATIONS.map(
     (intg): IntegrationConfigRecord => ({
       ...intg,
@@ -88,7 +88,7 @@ const dbState = {
     })
   ),
   orgUsers: [...INITIAL_ORG_USERS],
-  auditLogs: [...INITIAL_AUDIT_LOGS],
+  auditLogs: [] as SecurityAuditEvent[],
 };
 
 function appendServerAuditLog(
@@ -583,11 +583,77 @@ async function startServer() {
         domainName = new URL(targetUrl).hostname;
       } catch {}
 
+      // 1. Ensure target exists in dbState.targets
+      let existingTarget = dbState.targets.find((t: any) => t.target_value === targetUrl || t.target_value === domainName);
+      let targetId = existingTarget?.id;
+      if (!existingTarget) {
+        targetId = `tgt-${Date.now()}`;
+        existingTarget = {
+          id: targetId,
+          organization_id: 'org-myx-enterprise-01',
+          target_type: targetUrl.includes('://') ? 'URL' : 'DOMAIN',
+          target_value: targetUrl,
+          display_name: domainName,
+          environment: 'PRODUCTION' as const,
+          verification_status: 'VERIFIED' as const,
+          verification_method: 'HTTP_FILE' as const,
+          verification_token: `myx-token-${Math.random().toString(36).slice(2, 10)}`,
+          verified_at: new Date().toISOString(),
+          expires_at: null,
+          allowlisted: true,
+          created_by_email: actorEmail || 'midhun.krishnan@myx-security.io',
+          created_at: new Date().toISOString(),
+        };
+        dbState.targets = [existingTarget, ...dbState.targets];
+      }
+
+      // 2. Generate actual vulnerability findings for any failed/warning checks on this scanned website
+      const newFindings: any[] = [];
+      for (const check of results) {
+        if (check.status === 'FAIL' || check.status === 'WARNING') {
+          const findingCode = `MYX-FND-${Date.now().toString().slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`;
+          const cvssScore = check.severity === 'Critical' ? 9.8 :
+                            check.severity === 'High' ? 7.5 :
+                            check.severity === 'Medium' ? 5.3 : 3.1;
+          const finding = {
+            id: `fnd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            finding_code: findingCode,
+            title: `${check.check_title} on ${domainName}`,
+            description: `${check.check_title} detected during live HTTP security header audit of ${targetUrl}. ${check.remediation_text}`,
+            severity: check.severity,
+            status: 'Open' as const,
+            cvss_score: cvssScore,
+            cwe_id: check.check_code.includes('CSP') ? 'CWE-1021' :
+                    check.check_code.includes('HSTS') ? 'CWE-319' :
+                    check.check_code.includes('XFO') ? 'CWE-1021' :
+                    check.check_code.includes('XCTO') ? 'CWE-430' :
+                    check.check_code.includes('EXP') ? 'CWE-200' : 'CWE-693',
+            affected_asset: domainName,
+            affected_endpoint: targetUrl,
+            raw_evidence: check.raw_evidence,
+            remediation_guidance: check.remediation_text,
+            first_detected_at: new Date().toISOString(),
+            last_detected_at: new Date().toISOString(),
+            history: [
+              {
+                id: `aud-${Date.now()}`,
+                actor_email: actorEmail || 'midhun.krishnan@myx-security.io',
+                action: 'AUTOMATED_SCAN_DISCOVERY',
+                previous_value: null,
+                new_value: 'Open',
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          };
+          newFindings.push(finding);
+        }
+      }
+
       const runId = `asm-web-${Date.now()}`;
       const newRun = {
         id: runId,
         organization_id: 'org-myx-enterprise-01',
-        target_id: null,
+        target_id: targetId,
         target_display: targetUrl,
         module_type: 'WEBSITE',
         status: 'COMPLETED',
@@ -608,6 +674,7 @@ async function startServer() {
       };
 
       dbState.assessments = [newRun, ...dbState.assessments];
+      dbState.findings = [...newFindings, ...dbState.findings];
       appendServerAuditLog(
         'ASSESSMENT',
         'WEBSITE_SCAN_COMPLETED',
@@ -615,9 +682,9 @@ async function startServer() {
         runId,
         actorEmail || 'midhun.krishnan@myx-security.io',
         'SECURITY_ANALYST',
-        { target: targetUrl, score }
+        { target: targetUrl, score, findingsDiscovered: newFindings.length }
       );
-      res.status(200).json(newRun);
+      res.status(200).json({ run: newRun, findings: newFindings, targets: dbState.targets });
     } catch (err: any) {
       res.status(502).json({
         error: 'SCAN_FAILED',

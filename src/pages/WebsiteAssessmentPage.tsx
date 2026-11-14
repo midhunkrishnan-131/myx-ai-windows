@@ -16,8 +16,15 @@ import { ErrorState } from '../components/ui/States';
 import { TargetEnvironment, VerificationMethod, AssessmentRun } from '../types/assessment.types';
 
 export const WebsiteAssessmentPage: React.FC = () => {
-  const { targets, registerTarget, verifyTarget, assessments, addAssessmentRun, labTargetsAllowed } =
-    useSystemStatus();
+  const {
+    targets,
+    registerTarget,
+    verifyTarget,
+    assessments,
+    addAssessmentRun,
+    labTargetsAllowed,
+    recheckBackendConnection,
+  } = useSystemStatus();
   const { user } = useAuth();
   const { can } = useRBAC();
 
@@ -41,8 +48,9 @@ export const WebsiteAssessmentPage: React.FC = () => {
   const selectedTarget = targets.find((t) => t.id === selectedTargetId);
   const latestWebsiteRun =
     liveScanResult ||
-    assessments.find((a) => a.module_type === 'WEBSITE' && a.target_id === selectedTargetId) ||
-    assessments.find((a) => a.module_type === 'WEBSITE');
+    (selectedTargetId ? assessments.find((a) => a.module_type === 'WEBSITE' && a.target_id === selectedTargetId) : null) ||
+    assessments.find((a) => a.module_type === 'WEBSITE' && !a.is_demo_preview) ||
+    null;
 
   const handleQuickScan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,10 +77,13 @@ export const WebsiteAssessmentPage: React.FC = () => {
     try {
       const res = await assessmentsService.scanWebsiteUrl(formatted, user?.email);
       if (res.data) {
-        addAssessmentRun(res.data);
-        setLiveScanResult(res.data);
+        const runData = (res.data as any).run || res.data;
+        addAssessmentRun(runData);
+        setLiveScanResult(runData);
+        // Refresh bootstrap state across all pages (Dashboard, Findings, etc.)
+        await recheckBackendConnection();
         setScanMessage(
-          `Live assessment completed for ${res.data.target_display}! Security Score: ${res.data.risk_score}/100 · ${res.data.summary.failed} Failed, ${res.data.summary.warnings} Warnings, ${res.data.summary.passed} Passed.`
+          `Live assessment completed for ${runData.target_display}! Security Score: ${runData.risk_score}/100 · ${runData.summary.failed} Failed, ${runData.summary.warnings} Warnings, ${runData.summary.passed} Passed.`
         );
       } else if (res.error) {
         setRegistrationError(`Scan Error: ${res.error.message || 'Failed to scan website'}`);
@@ -376,10 +387,23 @@ export const WebsiteAssessmentPage: React.FC = () => {
       </div>
 
       {/* Assessment Check Results */}
-      {latestWebsiteRun && (
+      {!latestWebsiteRun ? (
+        <Card
+          title="Live Assessment Evidence & Control Findings"
+          subtitle="Waiting for scan execution"
+        >
+          <div className="py-12 px-4 text-center space-y-2">
+            <Globe className="w-10 h-10 text-[#737E8C]/50 mx-auto mb-2" />
+            <h3 className="text-sm font-semibold text-[#F5F7FA]">No Website Scan Executed Yet</h3>
+            <p className="text-xs text-[#A7B0BC] max-w-md mx-auto">
+              Enter any website URL in the quick scan bar above and click <strong>Scan Website Now</strong> to inspect live HTTP headers, CSP, HSTS, and clickjacking defenses.
+            </p>
+          </div>
+        </Card>
+      ) : (
         <Card
           title={`Inspected Controls — ${latestWebsiteRun.target_display}`}
-          subtitle={latestWebsiteRun.is_demo_preview ? 'Sample Preview Dataset' : 'Live Real-Time HTTP Security Header & Configuration Evidence'}
+          subtitle="Live Real-Time HTTP Security Header & Configuration Evidence"
           headerAction={
             <div className="flex items-center gap-2">
               <span className="text-xs text-[#A7B0BC]">Security Score:</span>

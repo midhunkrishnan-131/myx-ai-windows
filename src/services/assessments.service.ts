@@ -23,7 +23,7 @@ export const assessmentsService = {
   },
 
   async scanWebsiteUrl(targetUrl: string, actorEmail?: string) {
-    return apiClient.request<AssessmentRun>(
+    return apiClient.request<{ run: AssessmentRun; findings: any[]; targets: any[] }>(
       '/assessments/scan-website',
       {
         method: 'POST',

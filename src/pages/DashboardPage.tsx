@@ -272,26 +272,34 @@ export const DashboardPage: React.FC = () => {
           }
         >
           <div className="space-y-3">
-            {windowsAgents.map((agent) => (
-              <div
-                key={agent.id}
-                className="p-3 bg-[#101318] border border-[#29313B] rounded-lg space-y-1.5"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-mono font-semibold text-[#F5F7FA] truncate">
-                    {agent.hostname}
-                  </span>
-                  <StatusBadge status={agent.status} />
-                </div>
-                <div className="text-xs text-[#A7B0BC] truncate">
-                  {agent.os_edition} ({agent.os_version} · Build {agent.os_build})
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-[#737E8C] font-mono">
-                  <span>Token: {agent.privilege_level}</span>
-                  <span>IP: {agent.last_ip_address}</span>
-                </div>
+            {windowsAgents.length === 0 ? (
+              <div className="py-8 px-4 text-center text-xs text-[#A7B0BC] space-y-2">
+                <MonitorCheck className="w-8 h-8 text-[#29313B] mx-auto mb-1" />
+                <p>No Windows 10/11 agents enrolled yet.</p>
+                <p className="text-[11px] text-[#737E8C]">Run the background Windows auditor agent to stream live host telemetry.</p>
               </div>
-            ))}
+            ) : (
+              windowsAgents.map((agent) => (
+                <div
+                  key={agent.id}
+                  className="p-3 bg-[#101318] border border-[#29313B] rounded-lg space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-mono font-semibold text-[#F5F7FA] truncate">
+                      {agent.hostname}
+                    </span>
+                    <StatusBadge status={agent.status} />
+                  </div>
+                  <div className="text-xs text-[#A7B0BC] truncate">
+                    {agent.os_edition} ({agent.os_version} · Build {agent.os_build})
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-[#737E8C] font-mono">
+                    <span>Token: {agent.privilege_level}</span>
+                    <span>IP: {agent.last_ip_address}</span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </Card>
       </div>
@@ -314,41 +322,56 @@ export const DashboardPage: React.FC = () => {
           }
         >
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-[#101318] border-b border-[#29313B] text-[11px] font-medium text-[#A7B0BC]">
-                  <th className="py-3 px-4">Finding ID</th>
-                  <th className="py-3 px-4">Title & Asset</th>
-                  <th className="py-3 px-4">Severity</th>
-                  <th className="py-3 px-4 text-right">CVSS v3.1</th>
-                  <th className="py-3 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#29313B] text-xs">
-                {findings.slice(0, 4).map((f) => (
-                  <tr key={f.id} className="hover:bg-[#1B222B] transition-colors">
-                    <td className="py-3 px-4 font-mono text-[#38BDF8] whitespace-nowrap">
-                      {f.finding_code}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="font-medium text-[#F5F7FA]">{f.title}</div>
-                      <div className="font-mono text-[11px] text-[#737E8C] mt-0.5">
-                        {f.affected_asset} · {f.cwe_id}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <SeverityBadge severity={f.severity} />
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-[#F5F7FA] tabular-nums">
-                      {f.cvss_score?.toFixed(1) ?? 'N/A'}
-                    </td>
-                    <td className="py-3 px-4">
-                      <StatusBadge status={f.status} />
-                    </td>
+            {findings.length === 0 ? (
+              <div className="py-12 px-4 text-center space-y-2">
+                <Globe className="w-9 h-9 text-[#29313B] mx-auto mb-1" />
+                <div className="text-sm font-semibold text-[#F5F7FA]">No Open Security Findings</div>
+                <p className="text-xs text-[#A7B0BC] max-w-sm mx-auto">
+                  Provide a website URL in Website Assessment to scan security headers and discover vulnerabilities in real time.
+                </p>
+                <div className="pt-2">
+                  <Link to="/assessments/website">
+                    <Button variant="primary" size="sm">Go to Website Assessment &rarr;</Button>
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#101318] border-b border-[#29313B] text-[11px] font-medium text-[#A7B0BC]">
+                    <th className="py-3 px-4">Finding ID</th>
+                    <th className="py-3 px-4">Title & Asset</th>
+                    <th className="py-3 px-4">Severity</th>
+                    <th className="py-3 px-4 text-right">CVSS v3.1</th>
+                    <th className="py-3 px-4">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-[#29313B] text-xs">
+                  {findings.slice(0, 4).map((f) => (
+                    <tr key={f.id} className="hover:bg-[#1B222B] transition-colors">
+                      <td className="py-3 px-4 font-mono text-[#38BDF8] whitespace-nowrap">
+                        {f.finding_code}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-[#F5F7FA]">{f.title}</div>
+                        <div className="font-mono text-[11px] text-[#737E8C] mt-0.5">
+                          {f.affected_asset} · {f.cwe_id}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <SeverityBadge severity={f.severity} />
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono text-[#F5F7FA] tabular-nums">
+                        {f.cvss_score?.toFixed(1) ?? 'N/A'}
+                      </td>
+                      <td className="py-3 px-4">
+                        <StatusBadge status={f.status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </Card>
 

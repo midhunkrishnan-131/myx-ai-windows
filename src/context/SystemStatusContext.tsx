@@ -143,25 +143,21 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [lastHealthCheck, setLastHealthCheck] = useState<string | null>(null);
   const [labTargetsAllowed, setLabTargetsAllowedState] = useState<boolean>(true);
 
-  const [targets, setTargets] = useState<AuthorizedTarget[]>(INITIAL_AUTHORIZED_TARGETS);
-  const [assessments, setAssessments] = useState<AssessmentRun[]>(INITIAL_ASSESSMENT_RUNS);
-  const [windowsAgents, setWindowsAgents] = useState<WindowsAgentRecord[]>(INITIAL_WINDOWS_AGENTS);
-  const [windowsInventoryByAgent, setWindowsInventoryByAgent] = useState<Record<string, WindowsSystemInventory>>(
-    INITIAL_WINDOWS_INVENTORY_BY_AGENT
-  );
-  const [windowsPostureByAgent, setWindowsPostureByAgent] = useState<Record<string, WindowsPostureCheck[]>>(
-    INITIAL_WINDOWS_POSTURE_BY_AGENT
-  );
-  const [windowsSockets, setWindowsSockets] = useState<WindowsListeningSocket[]>(INITIAL_WINDOWS_SOCKETS);
-  const [wifiNetworks, setWifiNetworks] = useState<WifiNetworkAuditEntry[]>(INITIAL_WIFI_NETWORKS);
-  const [findings, setFindings] = useState<VulnerabilityFinding[]>(INITIAL_FINDINGS);
+  const [targets, setTargets] = useState<AuthorizedTarget[]>([]);
+  const [assessments, setAssessments] = useState<AssessmentRun[]>([]);
+  const [windowsAgents, setWindowsAgents] = useState<WindowsAgentRecord[]>([]);
+  const [windowsInventoryByAgent, setWindowsInventoryByAgent] = useState<Record<string, WindowsSystemInventory>>({});
+  const [windowsPostureByAgent, setWindowsPostureByAgent] = useState<Record<string, WindowsPostureCheck[]>>({});
+  const [windowsSockets, setWindowsSockets] = useState<WindowsListeningSocket[]>([]);
+  const [wifiNetworks, setWifiNetworks] = useState<WifiNetworkAuditEntry[]>([]);
+  const [findings, setFindings] = useState<VulnerabilityFinding[]>([]);
   const [aiSessions, setAiSessions] = useState<AiConversationSession[]>(INITIAL_AI_CONVERSATIONS);
   const [ragDocuments, setRagDocuments] = useState<RagDocumentRecord[]>(INITIAL_RAG_DOCUMENTS);
-  const [reports, setReports] = useState<SecurityReport[]>(INITIAL_REPORTS);
-  const [externalImports, setExternalImports] = useState<ExternalImportRecord[]>(INITIAL_EXTERNAL_IMPORTS);
+  const [reports, setReports] = useState<SecurityReport[]>([]);
+  const [externalImports, setExternalImports] = useState<ExternalImportRecord[]>([]);
   const [integrations, setIntegrations] = useState<IntegrationConfigRecord[]>(INITIAL_INTEGRATIONS);
   const [orgUsers, setOrgUsers] = useState<UserProfile[]>(INITIAL_ORG_USERS);
-  const [auditLogs, setAuditLogs] = useState<SecurityAuditEvent[]>(INITIAL_AUDIT_LOGS);
+  const [auditLogs, setAuditLogs] = useState<SecurityAuditEvent[]>([]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', themeMode);
