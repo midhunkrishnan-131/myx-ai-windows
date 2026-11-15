@@ -1647,10 +1647,13 @@ async function startServer() {
   }
   const vtLookupCache = new Map<string, ThreatCacheEntry>();
 
-  async function fetchVirusTotalReputation(target: string, isIp: boolean, apiKey: string): Promise<any> {
+  async function fetchVirusTotalReputation(target: string, isIp: boolean, apiKey: string, forceRefresh = false): Promise<any> {
     const cacheKey = `${isIp ? 'ip' : 'domain'}:${target.toLowerCase()}`;
+    if (forceRefresh) {
+      vtLookupCache.delete(cacheKey);
+    }
     const cached = vtLookupCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < 15 * 60 * 1000) {
+    if (!forceRefresh && cached && Date.now() - cached.timestamp < 15 * 60 * 1000) {
       return cached.data;
     }
 
@@ -1695,7 +1698,7 @@ async function startServer() {
     });
   }
 
-  async function enrichLinkGuardAnalysis(analysis: LinkGuardAnalysisResult): Promise<LinkGuardAnalysisResult> {
+  async function enrichLinkGuardAnalysis(analysis: LinkGuardAnalysisResult, forceRefresh = false): Promise<LinkGuardAnalysisResult> {
     const vtApiKey = process.env.VIRUSTOTAL_API_KEY;
     const gsbApiKey = process.env.GOOGLE_SAFE_BROWSING_API_KEY;
 
@@ -1706,7 +1709,7 @@ async function startServer() {
     try {
       const target = analysis.hostname;
       const isIp = analysis.lexical_signals.is_raw_ip;
-      const vtData = await fetchVirusTotalReputation(target, isIp, vtApiKey);
+      const vtData = await fetchVirusTotalReputation(target, isIp, vtApiKey, forceRefresh);
 
       if (vtData && vtData.data?.attributes) {
         const stats = vtData.data.attributes.last_analysis_stats || {
@@ -1830,9 +1833,9 @@ async function startServer() {
   }
 
   app.post(['/api/v1/linkguard/inspect', '/api/v1/intelligence/linkguard/analyze'], async (req: Request, res: Response) => {
-    const { url } = req.body;
+    const { url, forceRefresh } = req.body;
     const analysis = analyzeUrlWithLinkGuardLexical(String(url || ''));
-    const enriched = await enrichLinkGuardAnalysis(analysis);
+    const enriched = await enrichLinkGuardAnalysis(analysis, Boolean(forceRefresh));
     res.json(enriched);
   });
 

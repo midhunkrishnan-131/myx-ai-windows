@@ -47,18 +47,23 @@ export const LinkGuardPage: React.FC = () => {
   );
   const [isLoading, setIsLoading] = useState(false);
 
-  const executeAnalysis = async (targetUrl: string) => {
+  const executeAnalysis = async (targetUrl: string, forceRefresh = false) => {
     const trimmed = targetUrl.trim();
     if (!trimmed) return;
     setIsLoading(true);
+    const start = Date.now();
     try {
       const res = await fetch('/api/v1/linkguard/inspect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmed }),
+        body: JSON.stringify({ url: trimmed, forceRefresh }),
       });
       if (res.ok) {
         const data = await res.json();
+        const elapsed = Date.now() - start;
+        if (elapsed < 500) {
+          await new Promise((r) => setTimeout(r, 500 - elapsed));
+        }
         setResult(data);
       } else {
         setResult(analyzeUrlWithLinkGuardLexical(trimmed));
@@ -215,18 +220,23 @@ export const LinkGuardPage: React.FC = () => {
         </Card>
 
         <Card
-          title="Threat-Intelligence Feed Enrichment"
-          subtitle="Live multi-vendor threat intelligence & security vendor reputation telemetry"
-          headerAction={
-            <Button
-              size="sm"
-              variant="secondary"
-              isLoading={isLoading}
-              icon={<RefreshCw className="w-3.5 h-3.5" />}
-              onClick={() => executeAnalysis(urlInput)}
-            >
-              Re-scan Feeds
-            </Button>
+          title="Threat-Intelligence Feeds"
+          subtitle="Live multi-vendor reputation telemetry"
+          footer={
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-[#737E8C]">
+                {isLoading ? 'Querying threat feeds...' : 'Live feed active'}
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                isLoading={isLoading}
+                icon={<RefreshCw className="w-3.5 h-3.5" />}
+                onClick={() => executeAnalysis(urlInput, true)}
+              >
+                Re-scan Feeds
+              </Button>
+            </div>
           }
         >
           <div className="space-y-3">
@@ -235,27 +245,43 @@ export const LinkGuardPage: React.FC = () => {
               return (
                 <div
                   key={src.provider}
-                  className="p-3 bg-[#101318] border border-[#29313B] rounded-lg space-y-1.5"
+                  className="p-3 bg-[#101318] border border-[#29313B] rounded-lg space-y-2 hover:border-[#384252] transition-colors"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[#F5F7FA]">{src.provider}</span>
-                    <div className="flex items-center gap-2">
-                      <StatusBadge status={src.status} />
+                    <span className="text-xs font-semibold text-[#F5F7FA] whitespace-nowrap">
+                      {src.provider}
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {reportUrl ? (
+                        <a
+                          href={reportUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`Click to open live ${src.provider} report`}
+                          className="focus:outline-none focus:ring-1 focus:ring-[#D6AE45] rounded cursor-pointer transition-transform active:scale-95"
+                        >
+                          <StatusBadge status={src.status} />
+                        </a>
+                      ) : (
+                        <StatusBadge status={src.status} />
+                      )}
                       {reportUrl && (
                         <a
                           href={reportUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          title={`Open live ${src.provider} threat report`}
+                          title={`Open live ${src.provider} threat report in new tab`}
                           className="inline-flex items-center gap-1 text-[11px] text-[#A7B0BC] hover:text-[#D6AE45] transition-colors px-1.5 py-0.5 rounded hover:bg-[#1B222B]"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Report</span>
+                          <span className="text-[11px]">Report</span>
                         </a>
                       )}
                     </div>
                   </div>
-                  <p className="text-[11px] text-[#A7B0BC] leading-relaxed">{src.details}</p>
+                  <p className="text-[11px] text-[#A7B0BC] leading-relaxed text-left">
+                    {src.details}
+                  </p>
                 </div>
               );
             })}
