@@ -690,10 +690,10 @@ const dbState = {
   windowsPostureByAgent: {} as Record<string, WindowsPostureCheck[]>,
   windowsSockets: [] as WindowsListeningSocket[],
   wifiNetworks: [] as WifiNetworkAuditEntry[],
-  findings: [] as VulnerabilityFinding[],
+  findings: [...INITIAL_FINDINGS] as VulnerabilityFinding[],
   aiSessions: [...INITIAL_AI_CONVERSATIONS] as AiConversationSession[],
   ragDocuments: [...INITIAL_RAG_DOCUMENTS] as RagDocumentRecord[],
-  reports: [] as SecurityReport[],
+  reports: [...INITIAL_REPORTS] as SecurityReport[],
   externalImports: [] as ExternalImportRecord[],
   integrations: INITIAL_INTEGRATIONS.map(
     (intg): IntegrationConfigRecord => ({
@@ -2594,7 +2594,7 @@ async function startServer() {
             new_value: newStatus,
             timestamp: new Date().toISOString(),
           },
-          ...f.audit_trail,
+          ...(f.audit_trail || []),
         ],
       };
     });
@@ -2645,7 +2645,7 @@ async function startServer() {
         ...f,
         status: nextStatus,
         comments: [
-          ...f.comments,
+          ...(f.comments || []),
           {
             id: `cmt-${Date.now()}`,
             author_email: user.email,

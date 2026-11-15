@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { FileCheck2, FilePenLine } from 'lucide-react';
 import { useSystemStatus } from '../context/SystemStatusContext';
+import { INITIAL_REPORTS } from '../data/seedPreviewData';
 import { BRAND_CONFIG } from '../config/brand.config';
 import { Card } from '../components/ui/Card';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -9,6 +10,7 @@ import { ExportMenu } from '../components/common/ExportMenu';
 
 export const ReportsRepositoryPage: React.FC = () => {
   const { reports } = useSystemStatus();
+  const displayReports = reports.length > 0 ? reports : INITIAL_REPORTS;
 
   return (
     <div className="space-y-6">
@@ -32,7 +34,7 @@ export const ReportsRepositoryPage: React.FC = () => {
       </div>
 
       <div className="space-y-4">
-        {reports.map((rpt) => (
+        {displayReports.map((rpt) => (
           <Card
             key={rpt.id}
             title={`${rpt.report_code} — ${rpt.title}`}

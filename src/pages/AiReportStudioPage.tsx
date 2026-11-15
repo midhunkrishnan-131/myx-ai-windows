@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { FilePenLine, Upload, CheckCircle2, Sparkles } from 'lucide-react';
 import { useSystemStatus } from '../context/SystemStatusContext';
+import { INITIAL_REPORTS } from '../data/seedPreviewData';
+import { apiClient } from '../services/apiClient';
 import { useAuth } from '../hooks/useAuth';
 import { useRBAC } from '../hooks/useRBAC';
 import { ExternalScannerType } from '../types/reports.types';
@@ -21,8 +23,9 @@ export const AiReportStudioPage: React.FC = () => {
   const { user } = useAuth();
   const { can } = useRBAC();
 
-  const [selectedReportId, setSelectedReportId] = useState<string>(reports[0]?.id || '');
-  const activeReport = reports.find((r) => r.id === selectedReportId) || reports[0];
+  const displayReports = reports.length > 0 ? reports : INITIAL_REPORTS;
+  const [selectedReportId, setSelectedReportId] = useState<string>(displayReports[0]?.id || '');
+  const activeReport = displayReports.find((r) => r.id === selectedReportId) || displayReports[0];
   const [selectedSectionId, setSelectedSectionId] = useState<string>(
     activeReport?.sections[0]?.id || ''
   );
@@ -57,26 +60,25 @@ export const AiReportStudioPage: React.FC = () => {
     if (!activeReport || !activeSection) return;
     setGeneratingAiDraft(true);
     try {
-      const res = await fetch('/api/v1/ai/generate-report-section', {
+      const res = await apiClient.request<{
+        reports?: any[];
+        generatedParagraph?: string;
+      }>('/ai/generate-report-section', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reportId: activeReport.id,
           sectionId: activeSection.id,
           sectionTitle: activeSection.title,
         }),
       });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.generatedParagraph) {
-          updateReportSection(
-            activeReport.id,
-            activeSection.id,
-            `${activeSection.content_markdown}${json.generatedParagraph}`,
-            'MYX AI Copilot (gemini-3-flash-preview)'
-          );
-          return;
-        }
+      if (res.data?.generatedParagraph) {
+        updateReportSection(
+          activeReport.id,
+          activeSection.id,
+          `${activeSection.content_markdown}${res.data.generatedParagraph}`,
+          'MYX AI Copilot (gemini-3-flash-preview)'
+        );
+        return;
       }
     } catch {
       // Fallback handled below

@@ -226,7 +226,11 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (d.windowsPostureByAgent) setWindowsPostureByAgent(d.windowsPostureByAgent);
       if (d.windowsSockets) setWindowsSockets(d.windowsSockets);
       if (d.wifiNetworks) setWifiNetworks(d.wifiNetworks);
-      if (d.findings) setFindings(d.findings);
+      if (d.findings && d.findings.length > 0) {
+        setFindings(d.findings);
+      } else {
+        setFindings(INITIAL_FINDINGS);
+      }
       if (d.aiSessions && d.aiSessions.length > 0) {
         setAiSessions(d.aiSessions);
       } else {
@@ -237,7 +241,11 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       } else {
         setRagDocuments(INITIAL_RAG_DOCUMENTS);
       }
-      if (d.reports) setReports(d.reports);
+      if (d.reports && d.reports.length > 0) {
+        setReports(d.reports);
+      } else {
+        setReports(INITIAL_REPORTS);
+      }
       if (d.externalImports) setExternalImports(d.externalImports);
       if (d.integrations) setIntegrations(d.integrations);
       if (d.orgUsers) setOrgUsers(d.orgUsers);
@@ -473,7 +481,7 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
               new_value: newStatus,
               timestamp: new Date().toISOString(),
             },
-            ...f.audit_trail,
+            ...(f.audit_trail || []),
           ],
         };
       })
@@ -525,7 +533,7 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
           ...f,
           status: nextStatus,
           comments: [
-            ...f.comments,
+            ...(f.comments || []),
             {
               id: `cmt-${Date.now()}`,
               author_email: actorEmail,
