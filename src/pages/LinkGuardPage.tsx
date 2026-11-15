@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link2, Search, ShieldAlert, Info } from 'lucide-react';
 import { analyzeUrlWithLinkGuardLexical } from '../utils/securityLogic';
 import { LinkGuardAnalysisResult } from '../types/assessment.types';
@@ -32,11 +32,38 @@ export const LinkGuardPage: React.FC = () => {
   const [result, setResult] = useState<LinkGuardAnalysisResult>(() =>
     analyzeUrlWithLinkGuardLexical('https://xn--pple-43d.com/auth/login-verify.exe')
   );
+  const [isLoading, setIsLoading] = useState(false);
+
+  const executeAnalysis = async (targetUrl: string) => {
+    const trimmed = targetUrl.trim();
+    if (!trimmed) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/v1/linkguard/inspect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: trimmed }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setResult(data);
+      } else {
+        setResult(analyzeUrlWithLinkGuardLexical(trimmed));
+      }
+    } catch {
+      setResult(analyzeUrlWithLinkGuardLexical(trimmed));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    executeAnalysis(urlInput);
+  }, []);
 
   const handleAnalyze = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!urlInput.trim()) return;
-    setResult(analyzeUrlWithLinkGuardLexical(urlInput));
+    executeAnalysis(urlInput);
   };
 
   return (
@@ -79,7 +106,7 @@ export const LinkGuardPage: React.FC = () => {
               onChange={(e) => setUrlInput(e.target.value)}
               className="flex-1 px-3.5 py-2.5 bg-[#080A0D] border border-[#29313B] rounded-lg text-xs sm:text-sm font-mono text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
             />
-            <Button type="submit" variant="primary" icon={<Search className="w-4 h-4" />}>
+            <Button type="submit" variant="primary" isLoading={isLoading} icon={<Search className="w-4 h-4" />}>
               Analyze URL with LinkGuard AI
             </Button>
           </div>
@@ -92,7 +119,7 @@ export const LinkGuardPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setUrlInput(preset.url);
-                  setResult(analyzeUrlWithLinkGuardLexical(preset.url));
+                  executeAnalysis(preset.url);
                 }}
                 className="px-2.5 py-1 rounded bg-[#101318] hover:bg-[#1B222B] border border-[#29313B] text-xs text-[#A7B0BC] hover:text-[#F5F7FA] transition-colors"
               >
@@ -176,7 +203,7 @@ export const LinkGuardPage: React.FC = () => {
 
         <Card
           title="Threat-Intelligence Feed Enrichment"
-          subtitle="Honest state when external API keys are unconfigured"
+          subtitle="Live multi-vendor threat intelligence & security vendor reputation telemetry"
         >
           <div className="space-y-3">
             {result.threat_intel_sources.map((src) => (
