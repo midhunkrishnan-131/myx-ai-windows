@@ -76,19 +76,19 @@ export const ReportsRepositoryPage: React.FC = () => {
                 <div className="p-3 bg-[#101318] border border-[#29313B] rounded-lg">
                   <div className="text-[#A7B0BC]">Authorized Scope Targets</div>
                   <div className="font-mono text-[#F5F7FA] mt-1">
-                    {rpt.scope_targets.join(', ')}
+                    {(rpt.scope_targets || []).join(', ') || 'General Target'}
                   </div>
                 </div>
                 <div className="p-3 bg-[#101318] border border-[#29313B] rounded-lg">
                   <div className="text-[#A7B0BC]">Included Findings</div>
                   <div className="font-mono text-[#38BDF8] mt-1">
-                    {rpt.included_finding_codes.join(', ')}
+                    {(rpt.included_finding_codes || []).join(', ') || 'None'}
                   </div>
                 </div>
                 <div className="p-3 bg-[#101318] border border-[#29313B] rounded-lg">
                   <div className="text-[#A7B0BC]">Version History</div>
                   <div className="font-mono text-[#F5F7FA] mt-1">
-                    {rpt.versions.map((v) => `${v.version_number} (${v.status})`).join(' → ')}
+                    {(rpt.versions || []).map((v) => `${v.version_number} (${v.status})`).join(' → ') || 'v1.0 (DRAFT)'}
                   </div>
                 </div>
               </div>

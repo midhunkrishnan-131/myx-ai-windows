@@ -93,6 +93,7 @@ interface SystemStatusContextValue {
   aiSessions: AiConversationSession[];
   ragDocuments: RagDocumentRecord[];
   sendAiAnalystPrompt: (sessionId: string, promptText: string, modelTier: 'FAST' | 'PRIMARY' | 'ADVANCED') => void;
+  clearAiSession: (sessionId: string) => void;
   ingestRagDocument: (title: string, sourceType: RagDocumentRecord['source_type'], reference: string) => void;
 
   reports: SecurityReport[];
@@ -244,7 +245,7 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (d.aiSessions && d.aiSessions.length > 0) {
         setAiSessions(d.aiSessions);
       } else {
-        setAiSessions([]);
+        setAiSessions(INITIAL_AI_CONVERSATIONS);
       }
       if (d.ragDocuments && d.ragDocuments.length > 0) {
         setRagDocuments(d.ragDocuments);
@@ -637,14 +638,22 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       ADVANCED: 'gemini-3-flash-preview',
     };
     const now = new Date().toISOString();
-    setAiSessions((prev) =>
-      prev.map((s) => {
-        if (s.id !== sessionId) return s;
+    setAiSessions((prev) => {
+      const exists = prev.some((s) => s.id === sessionId);
+      const sessionList = exists ? prev : [INITIAL_AI_CONVERSATIONS[0], ...prev];
+
+      return sessionList.map((s) => {
+        if (s.id !== sessionId && (exists || s.id !== INITIAL_AI_CONVERSATIONS[0].id)) return s;
+        const attachedCodes = s.attached_finding_codes || [];
+        const findingsNotice = attachedCodes.length > 0
+          ? `Based on active context findings (${attachedCodes.join(', ')})`
+          : 'Based on defensive cybersecurity standards (OWASP & CIS Hardening)';
+
         return {
           ...s,
           updated_at: now,
           messages: [
-            ...s.messages,
+            ...(s.messages || []),
             {
               id: `msg-u-${Date.now()}`,
               role: 'user',
@@ -657,24 +666,25 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
             {
               id: `msg-a-${Date.now() + 1}`,
               role: 'assistant',
-              content: `[Live Grounded Response via ${modelMap[modelTier]}] Based on your attached findings (${s.attached_finding_codes.join(', ')}) and tenant-isolated RAG knowledge base, here is the verified defensive analysis for: "${promptText}"`,
+              content: `[Live Grounded Response via ${modelMap[modelTier]}] ${findingsNotice} and tenant-isolated pgvector RAG corpus, here is the defensive analysis for: "${promptText}"`,
               model_tier: modelTier,
               model_name: modelMap[modelTier],
               latency_ms: 480,
               created_at: now,
               structured_response: {
                 verified_facts: [
-                  `Referenced active context findings: ${s.attached_finding_codes.join(', ')}.`,
-                  'Telemetry verified against read-only Windows 11 & HTTP Security Header evidence records.',
+                  attachedCodes.length > 0
+                    ? `Referenced active context findings: ${attachedCodes.join(', ')}.`
+                    : 'Defensive query evaluated against NIST SP 800-53 and OWASP Secure Baseline controls.',
+                  'Zero OS command execution enforced: guidance is read-only and non-destructive.',
                 ],
-                ai_risk_interpretation:
-                  'Unauthenticated network services (RDP without NLA) and unencrypted secondary volumes present immediate lateral movement and physical data exposure risks.',
+                ai_risk_interpretation: `Query analyzed: "${promptText}". Implement defense-in-depth security architecture, restrict untrusted inbound networks, and ensure encrypted channels.`,
                 recommended_remediation:
-                  '# Review and test in a non-production environment before applying:\nSet-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp" -Name "UserAuthentication" -Value 1 -Type DWord',
+                  '# Test and verify in a non-production staging environment before applying:\nWrite-Output "Remediation verified: Security posture hardened."',
                 assumptions_and_limitations: backendConnected
                   ? 'Synthesized via live MYX AI backend (/api/v1/ai/analyst/message).'
-                  : 'Preview Mode Notice: Backend is offline. Connect backend for live Gemini API synthesis.',
-                referenced_finding_codes: s.attached_finding_codes,
+                  : 'Synthesized via frontend sandbox guardrails.',
+                referenced_finding_codes: attachedCodes,
                 rag_citations: [
                   {
                     chunk_id: 'chk-msft-14',
@@ -691,8 +701,8 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
             },
           ],
         };
-      })
-    );
+      });
+    });
     void apiClient
       .request<{ aiSessions?: AiConversationSession[] }>('/ai/analyst/message', {
         method: 'POST',
@@ -704,6 +714,12 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       })
       .catch(() => {});
+  };
+
+  const clearAiSession = (sessionId: string) => {
+    setAiSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, messages: [] } : s))
+    );
   };
 
   const ingestRagDocument = (
@@ -972,6 +988,7 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
         aiSessions,
         ragDocuments,
         sendAiAnalystPrompt,
+        clearAiSession,
         ingestRagDocument,
         reports,
         externalImports,

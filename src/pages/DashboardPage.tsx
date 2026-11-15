@@ -52,8 +52,9 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
-  const openFindings = findings.filter(
-    (f) => f.status === 'Open' || f.status === 'In Progress' || f.status === 'Reopened'
+  const safeFindings = Array.isArray(findings) ? findings : [];
+  const openFindings = safeFindings.filter(
+    (f) => f && (f.status === 'Open' || f.status === 'In Progress' || f.status === 'Reopened')
   );
   const criticalCount = openFindings.filter((f) => f.severity === 'Critical').length;
   const highCount = openFindings.filter((f) => f.severity === 'High').length;
@@ -174,7 +175,7 @@ export const DashboardPage: React.FC = () => {
           </div>
           <p className="text-[#F5F7FA] leading-relaxed">{aiBriefing.summary}</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
-            {aiBriefing.topPriorities.map((item, idx) => (
+            {(aiBriefing.topPriorities || []).map((item, idx) => (
               <div
                 key={idx}
                 className="p-2.5 bg-[#101318] border border-[#29313B] rounded font-mono text-[11px] text-[#A7B0BC]"

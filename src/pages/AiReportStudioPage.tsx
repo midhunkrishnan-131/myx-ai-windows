@@ -24,12 +24,13 @@ export const AiReportStudioPage: React.FC = () => {
   const { user } = useAuth();
   const { can } = useRBAC();
 
-  const realReports = reports.filter((r) => !r.id.startsWith('demo-') && !r.id.startsWith('rpt-2026-'));
-  const displayReports = realReports;
+  const safeReports = Array.isArray(reports) ? reports : [];
+  const realReports = safeReports.filter((r) => r && r.id && !r.id.startsWith('demo-') && !r.id.startsWith('rpt-2026-'));
+  const displayReports = realReports.length > 0 ? realReports : safeReports;
   const [selectedReportId, setSelectedReportId] = useState<string>(displayReports[0]?.id || '');
-  const activeReport = displayReports.find((r) => r.id === selectedReportId) || displayReports[0];
+  const activeReport = displayReports.find((r) => r && r.id === selectedReportId) || displayReports[0];
   const [selectedSectionId, setSelectedSectionId] = useState<string>(
-    activeReport?.sections[0]?.id || ''
+    activeReport?.sections?.[0]?.id || ''
   );
 
   // Scanner import state
@@ -39,8 +40,8 @@ export const AiReportStudioPage: React.FC = () => {
   const [confirmApproveOpen, setConfirmApproveOpen] = useState(false);
 
   const activeSection =
-    activeReport?.sections.find((s) => s.id === selectedSectionId) ||
-    activeReport?.sections[0];
+    activeReport?.sections?.find((s) => s.id === selectedSectionId) ||
+    activeReport?.sections?.[0];
 
   const handleImportSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,7 +146,7 @@ export const AiReportStudioPage: React.FC = () => {
       {activeReport && (
         <Card
           title={`${activeReport.report_code} — ${activeReport.title}`}
-          subtitle={`Version ${activeReport.current_version} · Reviewer: ${activeReport.assigned_reviewer_email} · Scope: ${activeReport.scope_targets.join(', ')}`}
+          subtitle={`Version ${activeReport.current_version} · Reviewer: ${activeReport.assigned_reviewer_email} · Scope: ${(activeReport.scope_targets || []).join(', ')}`}
           headerAction={
             <div className="flex flex-wrap items-center gap-2">
               <select
@@ -153,14 +154,14 @@ export const AiReportStudioPage: React.FC = () => {
                 value={activeReport.id}
                 onChange={(e) => {
                   setSelectedReportId(e.target.value);
-                  const nextReport = reports.find((r) => r.id === e.target.value);
-                  if (nextReport?.sections[0]) {
+                  const nextReport = displayReports.find((r) => r && r.id === e.target.value);
+                  if (nextReport?.sections?.[0]) {
                     setSelectedSectionId(nextReport.sections[0].id);
                   }
                 }}
                 className="px-2.5 py-1.5 bg-[#080A0D] border border-[#29313B] rounded text-xs font-mono text-[#F5F7FA]"
               >
-                {reports.map((r) => (
+                {displayReports.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.report_code} ({r.status})
                   </option>
@@ -203,7 +204,7 @@ export const AiReportStudioPage: React.FC = () => {
               <div className="text-xs font-semibold text-[#A7B0BC] mb-2">
                 Report Sections & Review State
               </div>
-              {activeReport.sections.map((sec) => (
+              {(activeReport.sections || []).map((sec) => (
                 <button
                   key={sec.id}
                   type="button"

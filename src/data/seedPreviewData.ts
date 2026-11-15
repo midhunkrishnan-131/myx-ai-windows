@@ -699,63 +699,37 @@ export const INITIAL_RAG_DOCUMENTS: RagDocumentRecord[] = [
 
 export const INITIAL_AI_CONVERSATIONS: AiConversationSession[] = [
   {
-    id: 'conv-001',
-    title: 'Remediation Plan for WIN11-SECOPS-01 RDP & BitLocker Findings',
-    attached_finding_codes: ['MYX-FND-2026-0041', 'MYX-FND-2026-0042'],
-    attached_assessment_ids: ['asm-win-2026-02'],
-    attached_windows_hosts: ['WIN11-SECOPS-01'],
-    updated_at: '2026-11-14T08:50:00Z',
+    id: 'conv-general-01',
+    title: 'Autonomous Defensive Security Copilot',
+    attached_finding_codes: [],
+    attached_assessment_ids: [],
+    attached_windows_hosts: [],
+    updated_at: new Date().toISOString(),
     messages: [
       {
-        id: 'msg-1',
-        role: 'user',
-        content: 'Which findings should I prioritize first on WIN11-SECOPS-01, and how do I remediate them safely?',
-        model_tier: 'PRIMARY',
-        model_name: 'gemini-2.5-flash',
-        latency_ms: 620,
-        created_at: '2026-11-14T08:49:30Z',
-      },
-      {
-        id: 'msg-2',
+        id: 'msg-welcome-01',
         role: 'assistant',
         content:
-          'Prioritize MYX-FND-2026-0041 (Critical, CVSS 9.8) immediately because RDP port 3389 is network-accessible without Network Level Authentication (NLA), followed by MYX-FND-2026-0042 (High, CVSS 7.1) to encrypt Volume D: with BitLocker.',
+          'Welcome to the MYX AI Security Analyst Copilot. I am connected to live assessment telemetry, OWASP standards, and NIST hardening benchmarks. Enter any security question below, select a quick prompt, or run a Website Assessment to analyze live target findings.',
         model_tier: 'PRIMARY',
-        model_name: 'gemini-2.5-flash',
-        latency_ms: 890,
-        created_at: '2026-11-14T08:50:00Z',
+        model_name: 'gemini-3-flash-preview',
+        latency_ms: 90,
+        created_at: new Date().toISOString(),
         structured_response: {
           verified_facts: [
-            'MYX-FND-2026-0041: Registry key HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp shows fDenyTSConnections = 0 and UserAuthentication = 0 on WIN11-SECOPS-01.',
-            'MYX-FND-2026-0042: Get-BitLockerVolume reports MountPoint D: is Decrypted with ProtectionStatus Off while C: uses XtsAes256.',
+            'Connected to live backend security auditing and assessment engines.',
+            'Ready to ingest tenant policy documents into tenant-isolated pgvector RAG corpus.',
           ],
           ai_risk_interpretation:
-            'Exposing TCP 3389 without NLA allows unauthenticated network actors to establish full Remote Desktop graphical login sessions, increasing exposure to pre-authentication RDS vulnerabilities and credential brute-forcing. Unencrypted secondary volume D: risks data disclosure if the physical drive is removed.',
+            'Autonomous copilot monitors your web endpoints, network perimeters, and Windows 10/11 hosts. Run an assessment or query defensive hardening baselines below.',
           recommended_remediation:
-            '# 1. Enforce NLA on RDP (Run in Elevated PowerShell after testing):\nSet-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp" -Name "UserAuthentication" -Value 1 -Type DWord\n\n# 2. Restrict Inbound TCP 3389 to Authorized Admin Subnet:\nSet-NetFirewallRule -DisplayGroup "Remote Desktop" -RemoteAddress "10.24.10.0/24"\n\n# 3. Enable BitLocker on Volume D:\nEnable-BitLocker -MountPoint "D:" -EncryptionMethod XtsAes256 -UsedSpaceOnly -RecoveryPasswordProtector',
+            '# Run an assessment in the sidebar or enter a defensive query below.\nGet-Service -Name "LanmanServer"',
           assumptions_and_limitations:
-            'Analysis is grounded in passive telemetry collected by MYX-Windows-Agent v2.4.0 at 2026-11-14T08:00:14Z. Verify active Group Policy Objects (GPOs) in CORP.MYX-DEFENSE.LOCAL so domain policies do not overwrite local registry changes.',
-          referenced_finding_codes: ['MYX-FND-2026-0041', 'MYX-FND-2026-0042'],
-          rag_citations: [
-            {
-              chunk_id: 'chk-msft-14',
-              document_title: 'Microsoft Windows 11 23H2/24H2 Security Baseline Hardening Guide',
-              source_type: 'WINDOWS_BASELINE',
-              section_heading: 'Section 4.2 — Remote Desktop Services & Network Level Authentication',
-              reference_code: 'MSFT-SEC-BASELINE-WIN11-24H2#4.2',
-              similarity_score: 0.94,
-            },
-            {
-              chunk_id: 'chk-org-02',
-              document_title: 'MYX Defense Operations Lab — Enterprise Vulnerability SLA & Allowlist Policy',
-              source_type: 'ORG_POLICY',
-              section_heading: 'Section 2.1 — Critical Severity Remediation Window (48 Hours)',
-              reference_code: 'ORG-POL-SLA-2026-V2#2.1',
-              similarity_score: 0.89,
-            },
-          ],
+            'Grounding is constrained to authorized scoped assets and authenticated tenant pgvector documents.',
+          referenced_finding_codes: [],
+          rag_citations: [],
           confidence_note:
-            'Grounded in 2 verified host findings and 2 tenant-scoped RAG reference chunks. Zero unverified CVEs cited.',
+            'Strict anti-hallucination schema enforced: zero fabricated CVEs or executable commands.',
         },
       },
     ],

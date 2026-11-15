@@ -39,12 +39,8 @@ const getProviderReportUrl = (provider: string, hostname: string, normalizedUrl:
 };
 
 export const LinkGuardPage: React.FC = () => {
-  const [urlInput, setUrlInput] = useState(
-    'https://xn--pple-43d.com/auth/login-verify.exe'
-  );
-  const [result, setResult] = useState<LinkGuardAnalysisResult>(() =>
-    analyzeUrlWithLinkGuardLexical('https://xn--pple-43d.com/auth/login-verify.exe')
-  );
+  const [urlInput, setUrlInput] = useState('');
+  const [result, setResult] = useState<LinkGuardAnalysisResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const executeAnalysis = async (targetUrl: string, forceRefresh = false) => {
@@ -96,7 +92,7 @@ export const LinkGuardPage: React.FC = () => {
             and Threat-Intelligence enrichment
           </p>
         </div>
-        <StatusBadge status={result.verdict} />
+        {result ? <StatusBadge status={result.verdict} /> : <StatusBadge status="READY FOR INSPECTION" />}
       </div>
 
       {/* Mandatory LinkGuard Disclaimer */}
@@ -148,8 +144,22 @@ export const LinkGuardPage: React.FC = () => {
         </form>
       </Card>
 
-      {/* 4-Tier Verdict & Structural Signals */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {!result ? (
+        <div className="py-16 px-6 text-center bg-[#101318] border border-[#29313B] rounded-xl space-y-4">
+          <div className="w-12 h-12 rounded-full bg-[#38BDF8]/15 text-[#38BDF8] flex items-center justify-center mx-auto">
+            <Link2 className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-[#F5F7FA]">No URL Analyzed Yet</h3>
+            <p className="text-xs text-[#A7B0BC] max-w-md mx-auto leading-relaxed">
+              Enter any suspicious URL or choose a preset test case above to inspect lexical anomalies, Punycode IDN homographs, SSRF targets, and multi-vendor threat intelligence feeds.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* 4-Tier Verdict & Structural Signals */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card
           title="Lexical, Homograph & SSRF Signals"
           subtitle={`Parsed Hostname: ${result.hostname}`}
@@ -306,6 +316,8 @@ export const LinkGuardPage: React.FC = () => {
           </div>
         </div>
       </Card>
+      </>
+      )}
     </div>
   );
 };

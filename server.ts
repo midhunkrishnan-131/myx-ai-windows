@@ -3240,11 +3240,11 @@ sys.stdout.buffer.write(pdf)
     let session = dbState.aiSessions.find((s) => s.id === sessionId) || dbState.aiSessions[0];
     if (!session) {
       session = {
-        id: sessionId || 'conv-001',
-        title: 'Remediation Plan for WIN11-SECOPS-01 RDP & BitLocker Findings',
-        attached_finding_codes: ['MYX-FND-2026-0041', 'MYX-FND-2026-0042'],
-        attached_assessment_ids: ['asm-win-2026-02'],
-        attached_windows_hosts: ['WIN11-SECOPS-01'],
+        id: sessionId || `conv-${Date.now()}`,
+        title: dbState.findings.length > 0 ? `Analysis for Active Findings (${dbState.findings.length})` : 'Autonomous Security Copilot Session',
+        attached_finding_codes: dbState.findings.map((f) => f.finding_code),
+        attached_assessment_ids: dbState.assessments.map((a) => a.id),
+        attached_windows_hosts: dbState.targets.map((t) => t.target_value),
         updated_at: new Date().toISOString(),
         messages: [],
       };
@@ -3252,21 +3252,26 @@ sys.stdout.buffer.write(pdf)
     }
     const attachedCodes = (session.attached_finding_codes && session.attached_finding_codes.length > 0)
       ? session.attached_finding_codes
-      : ['MYX-FND-2026-0041', 'MYX-FND-2026-0042'];
+      : dbState.findings.map((f) => f.finding_code);
+    const scopeName = (session.attached_windows_hosts && session.attached_windows_hosts.length > 0)
+      ? session.attached_windows_hosts.join(', ')
+      : 'Active Security Baseline';
 
-    let aiSummaryText = `[Live Backend Grounded Analysis via ${modelName}] Evaluated your defensive query ("${promptText}") against attached findings (${attachedCodes.join(', ')}) and tenant-isolated RAG references.`;
+    let aiSummaryText = `[Live Backend Grounded Analysis via ${modelName}] Evaluated query ("${promptText}") against scope (${scopeName}) and ${attachedCodes.length > 0 ? `findings (${attachedCodes.join(', ')})` : 'defensive benchmarks'}.`;
     let activeModelName = modelName;
-    let aiRiskInterpretation =
-      'Unauthenticated network services (RDP without NLA) and unencrypted secondary volumes present immediate lateral movement and physical data exposure risks.';
-    let recommendedRemediation =
-      '# Review and test in a non-production environment before applying:\nSet-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp" -Name "UserAuthentication" -Value 1 -Type DWord';
+    let aiRiskInterpretation = attachedCodes.length > 0
+      ? `Prioritize remediating high and critical vulnerabilities (${attachedCodes.slice(0, 3).join(', ')}) to reduce exposed attack surface.`
+      : 'Maintain strict HTTP security header enforcement, HSTS, CSP, and TLS 1.3 encryption across all public endpoints.';
+    let recommendedRemediation = attachedCodes.length > 0
+      ? '# Verify and apply defensive controls in a non-production environment before deploying to production.'
+      : '# Configure Strict-Transport-Security header:\nStrict-Transport-Security: max-age=31536000; includeSubDomains';
 
     const aiResult = await generateAiCompletionWithFailover({
-      contents: `You are the defensive AI Security Analyst for MYX AI by Midhun Krishnan (Windows Edition).
-Provide a concise, strictly defensive analysis for the following user query grounded in findings ${attachedCodes.join(', ')}:
+      contents: `You are the defensive AI Security Analyst for MYX AI by Midhun Krishnan.
+Provide a concise, strictly defensive analysis for the following user query grounded in scope "${scopeName}" and findings ${attachedCodes.join(', ') || 'none'}:
 Query: ${promptText}`,
       geminiModel: modelName,
-      systemInstruction: 'You are the defensive AI Security Analyst for MYX AI by Midhun Krishnan (Windows Edition). Provide strictly defensive, non-destructive guidance.',
+      systemInstruction: 'You are the defensive AI Security Analyst for MYX AI by Midhun Krishnan. Provide strictly defensive, non-destructive, actionable cybersecurity guidance.',
     });
 
     if (aiResult) {
