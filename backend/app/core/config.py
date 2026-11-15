@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
     CORS_ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173"
 
-    DATABASE_URL: str = "sqlite:///./myx_local_test.db"
+    DATABASE_URL: str = "sqlite:///./runtime/myx_local_test.db"
     ENCRYPTION_MASTER_KEY: str = "7m6Q5v8X2p4R9k3L1n8B0z5C4v7N6m2Q8w4E1r9T3y5="
 
     SESSION_COOKIE_NAME: str = "myx_session"

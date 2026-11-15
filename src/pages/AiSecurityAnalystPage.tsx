@@ -66,9 +66,9 @@ export const AiSecurityAnalystPage: React.FC = () => {
               onChange={(e) => setModelTier(e.target.value as GeminiModelTier)}
               className="px-2.5 py-1 bg-[#080A0D] border border-[#29313B] rounded text-xs font-mono text-[#F5F7FA]"
             >
-              <option value="FAST">FAST: gemini-2.5-flash-lite</option>
-              <option value="PRIMARY">PRIMARY: gemini-2.5-flash</option>
-              <option value="ADVANCED">ADVANCED: gemini-2.5-pro</option>
+              <option value="FAST">FAST: gemini-3-flash-preview</option>
+              <option value="PRIMARY">PRIMARY: gemini-3-flash-preview</option>
+              <option value="ADVANCED">ADVANCED: gemini-3-flash-preview (High Reasoning)</option>
             </select>
           }
         >

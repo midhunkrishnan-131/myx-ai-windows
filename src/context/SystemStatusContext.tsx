@@ -575,9 +575,9 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
     modelTier: 'FAST' | 'PRIMARY' | 'ADVANCED'
   ) => {
     const modelMap = {
-      FAST: 'gemini-2.5-flash-lite',
-      PRIMARY: 'gemini-2.5-flash',
-      ADVANCED: 'gemini-2.5-pro',
+      FAST: 'gemini-3-flash-preview',
+      PRIMARY: 'gemini-3-flash-preview',
+      ADVANCED: 'gemini-3-flash-preview',
     };
     const now = new Date().toISOString();
     setAiSessions((prev) =>

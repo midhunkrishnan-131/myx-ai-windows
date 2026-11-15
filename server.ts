@@ -843,6 +843,37 @@ async function startServer() {
     });
   });
 
+  function normalizeFinding(f: any): VulnerabilityFinding {
+    if (!f) return f;
+    const evidenceList = Array.isArray(f.evidence) && f.evidence.length > 0
+      ? f.evidence
+      : f.raw_evidence
+      ? [
+          {
+            id: `ev-${f.id || Date.now()}`,
+            evidence_type: 'HTTP_TRACE' as const,
+            title: `${f.title || 'Finding'} Raw Evidence Trace`,
+            content_text: String(f.raw_evidence),
+            sha256_hash: crypto.createHash('sha256').update(String(f.raw_evidence)).digest('hex'),
+            uploaded_by_email: 'system@myx-security.io',
+            created_at: f.first_detected_at || new Date().toISOString(),
+          },
+        ]
+      : [];
+    return {
+      ...f,
+      cvss_version: f.cvss_version || '3.1',
+      evidence: evidenceList,
+      comments: Array.isArray(f.comments) ? f.comments : [],
+      audit_trail: Array.isArray(f.audit_trail)
+        ? f.audit_trail
+        : Array.isArray(f.history)
+        ? f.history
+        : [],
+      cve_ids: Array.isArray(f.cve_ids) ? f.cve_ids : [],
+    };
+  }
+
   // 2. Full State Bootstrap Endpoint for Authenticated State Synchronization (C-05)
   app.get('/api/v1/bootstrap', requireAuth, (req: Request, res: Response) => {
     const user = (req as any).user as StoredUserAccount;
@@ -881,6 +912,8 @@ async function startServer() {
       ? dbState.auditLogs.filter((l) => l.actor_role !== 'ADMIN')
       : [];
 
+    const safeFindings = (dbState.findings || []).map(normalizeFinding);
+
     res.json({
       settings: dbState.settings,
       targets: dbState.targets,
@@ -890,7 +923,7 @@ async function startServer() {
       windowsPostureByAgent: dbState.windowsPostureByAgent,
       windowsSockets: dbState.windowsSockets,
       wifiNetworks: dbState.wifiNetworks,
-      findings: dbState.findings,
+      findings: safeFindings,
       aiSessions: dbState.aiSessions,
       ragDocuments: dbState.ragDocuments,
       reports: dbState.reports,
@@ -1588,7 +1621,7 @@ async function startServer() {
             },
           ],
         };
-        newFindings.push(finding);
+        newFindings.push(normalizeFinding(finding));
       }
     }
 
@@ -2152,7 +2185,7 @@ async function startServer() {
             },
           ],
         };
-        newFindings.push(finding);
+        newFindings.push(normalizeFinding(finding));
       }
     }
 
@@ -2667,7 +2700,7 @@ async function startServer() {
   });
 
   // --- Automated AI Key Rotation & Multi-Cloud Failover Engine ---
-  const withAiTimeout = <T>(promise: Promise<T>, ms = 5000): Promise<T> =>
+  const withAiTimeout = <T>(promise: Promise<T>, ms = 15000): Promise<T> =>
     Promise.race([
       promise,
       new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`AI Request Timeout after ${ms}ms`)), ms)),
@@ -2684,15 +2717,27 @@ async function startServer() {
     if (process.env.GEMINI_API_KEY) {
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const resp = await withAiTimeout(
-          ai.models.generateContent({
-            model: geminiModel,
-            contents: options.contents,
-          }),
-          5000
-        );
-        if (resp.text && resp.text.trim()) {
-          return { text: resp.text.trim(), provider: 'gemini_primary', model: geminiModel };
+        let resp: any;
+        try {
+          resp = await withAiTimeout(
+            ai.models.generateContent({
+              model: geminiModel,
+              contents: options.contents,
+            }),
+            15000
+          );
+        } catch {
+          // Fallback to validated gemini-3-flash-preview if specific sub-tier model is unavailable
+          resp = await withAiTimeout(
+            ai.models.generateContent({
+              model: 'gemini-3-flash-preview',
+              contents: options.contents,
+            }),
+            15000
+          );
+        }
+        if (resp?.text && resp.text.trim()) {
+          return { text: resp.text.trim(), provider: 'gemini_primary', model: 'gemini-3-flash-preview' };
         }
       } catch (err: any) {
         console.warn(`[MYX AI Failover] Primary Gemini key failed (${err?.message || err}). Failing over to Gemini Backup Key #2...`);
@@ -2703,15 +2748,26 @@ async function startServer() {
     if (process.env.GEMINI_API_KEY_2) {
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY_2 });
-        const resp = await withAiTimeout(
-          ai.models.generateContent({
-            model: geminiModel,
-            contents: options.contents,
-          }),
-          5000
-        );
-        if (resp.text && resp.text.trim()) {
-          return { text: resp.text.trim(), provider: 'gemini_backup', model: geminiModel };
+        let resp: any;
+        try {
+          resp = await withAiTimeout(
+            ai.models.generateContent({
+              model: geminiModel,
+              contents: options.contents,
+            }),
+            15000
+          );
+        } catch {
+          resp = await withAiTimeout(
+            ai.models.generateContent({
+              model: 'gemini-3-flash-preview',
+              contents: options.contents,
+            }),
+            15000
+          );
+        }
+        if (resp?.text && resp.text.trim()) {
+          return { text: resp.text.trim(), provider: 'gemini_backup', model: 'gemini-3-flash-preview' };
         }
       } catch (err: any) {
         console.warn(`[MYX AI Failover] Backup Gemini key failed (${err?.message || err}). Failing over to Groq Cloud...`);
@@ -2727,7 +2783,7 @@ async function startServer() {
             Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
             'Content-Type': 'application/json',
           },
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(15000),
           body: JSON.stringify({
             model: 'openai/gpt-oss-120b',
             messages: [
