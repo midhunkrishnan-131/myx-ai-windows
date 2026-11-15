@@ -47,7 +47,7 @@ export const AuthPortalPage: React.FC<{ initialMode?: AuthFlowMode }> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authenticatedUserRole, setAuthenticatedUserRole] = useState<string>('ADMIN');
 
-  const { user, loginWithCredentials } = useAuth();
+  const { user, loginWithCredentials, refreshSession } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -132,27 +132,31 @@ export const AuthPortalPage: React.FC<{ initialMode?: AuthFlowMode }> = ({
           return;
         }
 
-        let authenticated = false;
         try {
           const res = await fetch('/api/v1/auth/login', {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: cleanEmail, password: cleanPass }),
           });
           const data = await res.json();
           if (res.ok && data.ok) {
-            authenticated = true;
-            const userRole = data.user?.role || 'SECURITY_ANALYST';
-            setAuthenticatedUserRole(userRole);
+            const userProfile = data.user;
+            setAuthenticatedUserRole(userProfile.role || 'SECURITY_ANALYST');
 
             if (!data.requires2FA) {
-              loginWithCredentials(cleanEmail, userRole);
+              loginWithCredentials(userProfile);
               setStatusMessage('Authentication successful! Establishing encrypted session...');
               setTimeout(() => {
                 navigate(fromPath, { replace: true });
               }, 400);
               setIsSubmitting(false);
               return;
+            } else {
+              setMode('TOTP_CHALLENGE');
+              setStatusMessage(
+                'Password verified successfully. Please enter your 6-digit authenticator TOTP code to complete login.'
+              );
             }
           } else {
             setErrorMessage(data.message || 'Invalid email or password. Please try again.');
@@ -160,25 +164,11 @@ export const AuthPortalPage: React.FC<{ initialMode?: AuthFlowMode }> = ({
             return;
           }
         } catch {
-          if (
-            (cleanEmail === 'midhun.krishnan@myx-security.io' || cleanEmail === 'admin') &&
-            cleanPass === 'Midhun@1234'
-          ) {
-            authenticated = true;
-            setAuthenticatedUserRole('ADMIN');
-          } else {
-            setErrorMessage('Invalid email or password. Please try again.');
-            setIsSubmitting(false);
-            return;
-          }
+          setErrorMessage('Unable to connect to authentication server. Please check your connection.');
+          setIsSubmitting(false);
+          return;
         }
 
-        if (authenticated) {
-          setMode('TOTP_CHALLENGE');
-          setStatusMessage(
-            'Argon2id password verified successfully. Issued 5-minute pre_2fa_session. Enter 6-digit TOTP code (or default 123456) to complete login.'
-          );
-        }
         setIsSubmitting(false);
         return;
       }
@@ -191,11 +181,27 @@ export const AuthPortalPage: React.FC<{ initialMode?: AuthFlowMode }> = ({
           return;
         }
 
-        loginWithCredentials(email, authenticatedUserRole as any);
-        setStatusMessage('Authentication successful! Establishing encrypted session...');
-        setTimeout(() => {
-          navigate(fromPath, { replace: true });
-        }, 400);
+        try {
+          const res = await fetch('/api/v1/auth/verify-2fa', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: cleanTotp }),
+          });
+          const data = await res.json();
+          if (res.ok && data.ok) {
+            void refreshSession();
+            setStatusMessage('Two-factor challenge verified! Establishing session...');
+            setTimeout(() => {
+              navigate(fromPath, { replace: true });
+            }, 400);
+          } else {
+            setErrorMessage(data.message || 'Invalid two-factor code. Please try again.');
+          }
+        } catch {
+          setErrorMessage('Failed to connect to authentication server. Please try again.');
+        }
+        setIsSubmitting(false);
         return;
       }
 
@@ -213,11 +219,6 @@ export const AuthPortalPage: React.FC<{ initialMode?: AuthFlowMode }> = ({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleDirectAdminLogin = () => {
-    loginWithCredentials('midhun.krishnan@myx-security.io', 'ADMIN');
-    navigate(fromPath, { replace: true });
   };
 
   return (
@@ -459,16 +460,9 @@ export const AuthPortalPage: React.FC<{ initialMode?: AuthFlowMode }> = ({
                     setStatusMessage(null);
                     setErrorMessage(null);
                   }}
-                  className="text-[#A7B0BC] hover:text-[#F5F7FA]"
-                >
-                  Need an account? Register &rarr;
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDirectAdminLogin}
                   className="text-[#D6AE45] hover:underline font-medium"
                 >
-                  Admin Shortcut &rarr;
+                  Need an enterprise account? Register &rarr;
                 </button>
               </div>
             )}

@@ -5,6 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import net from 'net';
 import https from 'https';
+import dns from 'node:dns/promises';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
@@ -80,16 +81,58 @@ export interface StoredUserAccount {
   last_login_at: string;
 }
 
-const USERS_DB_PATH = path.join(__dirname, 'backend', 'registered_users.json');
+const RUNTIME_DIR = path.join(__dirname, 'backend', 'runtime');
+const USERS_DB_PATH = path.join(RUNTIME_DIR, 'users.json');
+const LEGACY_USERS_DB_PATH = path.join(__dirname, 'backend', 'registered_users.json');
 
+export interface StoredUserAccount {
+  id: string;
+  email: string;
+  password_hash: string;
+  full_name: string;
+  job_title: string;
+  role: 'ADMIN' | 'SECURITY_ANALYST' | 'VIEWER';
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string;
+  is_active: boolean;
+  is_email_verified: boolean;
+  totp_enabled: boolean;
+  created_at: string;
+  last_login_at: string;
+  must_change_password?: boolean;
+}
+
+// Robust, high-entropy password hashing with CPU/memory-hard scrypt (N=32768)
 function hashUserPassword(password: string): string {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-  return `scrypt:${salt}:${hash}`;
+  const salt = crypto.randomBytes(32).toString('hex');
+  const hash = crypto
+    .scryptSync(password, salt, 64, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 })
+    .toString('hex');
+  return `scrypt32k:${salt}:${hash}`;
 }
 
 function verifyUserPassword(password: string, storedHash: string): boolean {
-  if (storedHash && storedHash.startsWith('scrypt:')) {
+  if (!storedHash || typeof storedHash !== 'string') return false;
+
+  // Modern high-cost scrypt format
+  if (storedHash.startsWith('scrypt32k:')) {
+    const parts = storedHash.split(':');
+    if (parts.length === 3) {
+      const [, salt, hash] = parts;
+      try {
+        const computed = crypto
+          .scryptSync(password, salt, 64, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 })
+          .toString('hex');
+        return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(computed, 'hex'));
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  // Backward compatibility for existing active accounts
+  if (storedHash.startsWith('scrypt:')) {
     const parts = storedHash.split(':');
     if (parts.length === 3) {
       const [, salt, hash] = parts;
@@ -101,7 +144,28 @@ function verifyUserPassword(password: string, storedHash: string): boolean {
       }
     }
   }
-  return storedHash === password;
+
+  // Strict: zero plaintext comparisons permitted
+  return false;
+}
+
+function validatePasswordComplexity(password: string): { valid: boolean; reason?: string } {
+  if (!password || password.length < 10) {
+    return { valid: false, reason: 'Password must be at least 10 characters in length.' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one uppercase letter (A-Z).' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one lowercase letter (a-z).' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one numerical digit (0-9).' };
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one special character (e.g. !@#$%^&*).' };
+  }
+  return { valid: true };
 }
 
 function loadRegisteredUsers(): StoredUserAccount[] {
@@ -112,16 +176,52 @@ function loadRegisteredUsers(): StoredUserAccount[] {
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
+    } else if (fs.existsSync(LEGACY_USERS_DB_PATH)) {
+      const data = fs.readFileSync(LEGACY_USERS_DB_PATH, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+        fs.writeFileSync(USERS_DB_PATH, JSON.stringify(parsed, null, 2), 'utf-8');
+        return parsed;
+      }
     }
   } catch (err) {
     console.error('[Auth Store] Error reading registered users file:', err);
   }
 
-  // Provision default administrator
+  return [];
+}
+
+function saveRegisteredUsers(users: StoredUserAccount[]): void {
+  try {
+    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    fs.writeFileSync(USERS_DB_PATH, JSON.stringify(users, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[Auth Store] Error saving users file:', err);
+  }
+}
+
+// Secure One-Time Administrator Bootstrap (C-01)
+let isSystemBootstrapped = false;
+function bootstrapAdminAccountIfNeeded(): void {
+  const users = loadRegisteredUsers();
+  const adminExists = users.some((u) => u.role === 'ADMIN' && u.is_active);
+  if (adminExists) {
+    isSystemBootstrapped = true;
+    return;
+  }
+
+  const bootstrapPassword =
+    process.env.ADMIN_BOOTSTRAP_PASSWORD ||
+    process.env.ADMIN_INITIAL_PASSWORD ||
+    crypto.randomBytes(15).toString('base64url');
+
+  const adminEmail = process.env.ADMIN_BOOTSTRAP_EMAIL || 'midhun.krishnan@myx-security.io';
+
   const defaultAdmin: StoredUserAccount = {
-    id: 'usr-admin-001',
-    email: 'midhun.krishnan@myx-security.io',
-    password_hash: hashUserPassword('Midhun@1234'),
+    id: `usr-admin-${crypto.randomBytes(6).toString('hex')}`,
+    email: adminEmail,
+    password_hash: hashUserPassword(bootstrapPassword),
     full_name: 'Midhun Krishnan',
     job_title: 'Principal Security Architect',
     role: 'ADMIN',
@@ -130,26 +230,289 @@ function loadRegisteredUsers(): StoredUserAccount[] {
     organization_slug: 'myx-defense-ops',
     is_active: true,
     is_email_verified: true,
-    totp_enabled: true,
-    created_at: '2026-01-10T10:00:00Z',
+    totp_enabled: false,
+    created_at: new Date().toISOString(),
     last_login_at: new Date().toISOString(),
+    must_change_password: !Boolean(process.env.ADMIN_BOOTSTRAP_PASSWORD),
   };
 
-  const initialList = [defaultAdmin];
-  try {
-    fs.mkdirSync(path.dirname(USERS_DB_PATH), { recursive: true });
-    fs.writeFileSync(USERS_DB_PATH, JSON.stringify(initialList, null, 2), 'utf-8');
-  } catch {}
+  users.push(defaultAdmin);
+  saveRegisteredUsers(users);
+  isSystemBootstrapped = true;
 
-  return initialList;
+  if (!process.env.ADMIN_BOOTSTRAP_PASSWORD) {
+    console.log('================================================================================');
+    console.log('[SECURITY ALERT] INITIAL ADMINISTRATOR ACCOUNT PROVISIONED (ONE-TIME BOOTSTRAP):');
+    console.log(`  Email:    ${adminEmail}`);
+    console.log(`  Password: ${bootstrapPassword}`);
+    console.log('  NOTICE: This password was generated once and will never be displayed again.');
+    console.log('          Please log in and rotate credentials immediately.');
+    console.log('================================================================================');
+  } else {
+    console.log(`[SECURITY] Administrator account provisioned from environment variable for ${adminEmail}.`);
+  }
 }
 
-function saveRegisteredUsers(users: StoredUserAccount[]) {
-  try {
-    fs.writeFileSync(USERS_DB_PATH, JSON.stringify(users, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('[Auth Store] Error saving users file:', err);
+// Execute one-time bootstrap on startup
+bootstrapAdminAccountIfNeeded();
+
+// --- Server-Side Session Store & CSRF Architecture ---
+export interface ServerSession {
+  id: string;
+  tokenHash: string;
+  userId: string;
+  user: StoredUserAccount;
+  csrfToken: string;
+  createdAt: number;
+  expiresAt: number;
+  lastActiveAt: number;
+  ip: string;
+  userAgent: string;
+}
+
+const activeSessions = new Map<string, ServerSession>();
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours max
+const SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours idle
+
+function createSession(
+  user: StoredUserAccount,
+  ip: string,
+  userAgent: string
+): { session: ServerSession; rawToken: string } {
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const csrfToken = crypto.randomBytes(32).toString('hex');
+  const now = Date.now();
+
+  const session: ServerSession = {
+    id: `sess-${crypto.randomBytes(16).toString('hex')}`,
+    tokenHash,
+    userId: user.id,
+    user,
+    csrfToken,
+    createdAt: now,
+    expiresAt: now + SESSION_TTL_MS,
+    lastActiveAt: now,
+    ip,
+    userAgent,
+  };
+
+  activeSessions.set(tokenHash, session);
+  return { session, rawToken };
+}
+
+function getSessionByToken(rawToken?: string): ServerSession | null {
+  if (!rawToken || typeof rawToken !== 'string') return null;
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const session = activeSessions.get(tokenHash);
+  if (!session) return null;
+
+  const now = Date.now();
+  if (now > session.expiresAt || now - session.lastActiveAt > SESSION_IDLE_TIMEOUT_MS) {
+    activeSessions.delete(tokenHash);
+    return null;
   }
+
+  session.lastActiveAt = now;
+  return session;
+}
+
+function destroySessionByToken(rawToken?: string): boolean {
+  if (!rawToken) return false;
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  return activeSessions.delete(tokenHash);
+}
+
+function parseCookies(cookieHeader?: string): Record<string, string> {
+  const list: Record<string, string> = {};
+  if (!cookieHeader) return list;
+  cookieHeader.split(';').forEach((cookie) => {
+    const parts = cookie.split('=');
+    const name = parts[0]?.trim();
+    if (!name) return;
+    const value = parts.slice(1).join('=').trim();
+    list[name] = decodeURIComponent(value);
+  });
+  return list;
+}
+
+// Login Rate Limiting (H-02)
+interface RateLimitRecord {
+  attempts: number;
+  lockedUntil: number;
+}
+const loginRateLimitStore = new Map<string, RateLimitRecord>();
+
+function checkLoginRateLimit(key: string): { allowed: boolean; remainingAttempts: number; retryAfterSec?: number } {
+  const now = Date.now();
+  const record = loginRateLimitStore.get(key);
+  if (!record) {
+    return { allowed: true, remainingAttempts: 5 };
+  }
+  if (record.lockedUntil > now) {
+    return {
+      allowed: false,
+      remainingAttempts: 0,
+      retryAfterSec: Math.ceil((record.lockedUntil - now) / 1000),
+    };
+  }
+  if (now - record.lockedUntil > 15 * 60 * 1000) {
+    loginRateLimitStore.delete(key);
+    return { allowed: true, remainingAttempts: 5 };
+  }
+  return { allowed: true, remainingAttempts: Math.max(0, 5 - record.attempts) };
+}
+
+function recordLoginFailure(key: string): void {
+  const now = Date.now();
+  const record = loginRateLimitStore.get(key) || { attempts: 0, lockedUntil: 0 };
+  record.attempts += 1;
+  if (record.attempts >= 5) {
+    record.lockedUntil = now + 15 * 60 * 1000;
+  }
+  loginRateLimitStore.set(key, record);
+}
+
+function clearLoginRateLimit(key: string): void {
+  loginRateLimitStore.delete(key);
+}
+
+function extractRawSessionToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7).trim();
+  }
+  const cookies = parseCookies(req.headers.cookie);
+  if (cookies.myx_session) {
+    return cookies.myx_session;
+  }
+  return null;
+}
+
+// Authentication Middleware (C-04)
+function requireAuth(req: Request, res: Response, next: () => void) {
+  const token = extractRawSessionToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED',
+      message: 'Authentication required. Please sign in.',
+    });
+  }
+
+  const session = getSessionByToken(token);
+  if (!session) {
+    return res.status(401).json({
+      ok: false,
+      error: 'SESSION_EXPIRED',
+      message: 'Your session has expired or is invalid. Please sign in again.',
+    });
+  }
+
+  const users = loadRegisteredUsers();
+  const freshUser = users.find((u) => u.id === session.userId);
+  if (!freshUser || !freshUser.is_active) {
+    destroySessionByToken(token);
+    return res.status(401).json({
+      ok: false,
+      error: 'ACCOUNT_DEACTIVATED',
+      message: 'Account has been deactivated or removed.',
+    });
+  }
+
+  (req as any).user = freshUser;
+  session.user = freshUser;
+  (req as any).session = session;
+  (req as any).clientIp = req.ip || (req.socket ? req.socket.remoteAddress : '127.0.0.1');
+
+  res.setHeader('X-CSRF-Token', session.csrfToken);
+  next();
+}
+
+// Role-Based Access Control (RBAC) Middleware (C-04)
+function requireRole(allowedRoles: ('ADMIN' | 'SECURITY_ANALYST' | 'VIEWER')[]) {
+  return (req: Request, res: Response, next: () => void) => {
+    const user = (req as any).user as StoredUserAccount | undefined;
+    if (!user) {
+      return res.status(401).json({
+        ok: false,
+        error: 'UNAUTHENTICATED',
+        message: 'Authentication required.',
+      });
+    }
+
+    if (!allowedRoles.includes(user.role)) {
+      appendServerAuditLog(
+        'RBAC',
+        'ACCESS_DENIED_ROLE_DEFICIENT',
+        'api_endpoint',
+        req.path,
+        user.email,
+        user.role,
+        { requiredRoles: allowedRoles, attemptedMethod: req.method }
+      );
+
+      return res.status(403).json({
+        ok: false,
+        error: 'FORBIDDEN',
+        message: `Action requires one of the following roles: ${allowedRoles.join(', ')}. Your role is ${user.role}.`,
+      });
+    }
+
+    next();
+  };
+}
+
+// Session-Bound CSRF Middleware (H-03)
+function requireCsrf(req: Request, res: Response, next: () => void) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+
+  // Exempt initial unauthenticated entry endpoints
+  if (
+    req.path === '/api/v1/auth/login' ||
+    req.path === '/api/v1/auth/register' ||
+    req.path === '/api/v1/windows-agent/enroll'
+  ) {
+    return next();
+  }
+
+  const session = (req as any).session as ServerSession | undefined;
+  if (!session) {
+    return next();
+  }
+
+  const clientCsrf = req.headers['x-csrf-token'];
+  if (!clientCsrf || typeof clientCsrf !== 'string') {
+    return res.status(403).json({
+      ok: false,
+      error: 'CSRF_TOKEN_MISSING',
+      message: 'State-changing request rejected: X-CSRF-Token header is missing.',
+    });
+  }
+
+  try {
+    const valid =
+      clientCsrf.length === session.csrfToken.length &&
+      crypto.timingSafeEqual(Buffer.from(clientCsrf), Buffer.from(session.csrfToken));
+
+    if (!valid) {
+      return res.status(403).json({
+        ok: false,
+        error: 'CSRF_TOKEN_INVALID',
+        message: 'State-changing request rejected: Invalid CSRF token.',
+      });
+    }
+  } catch {
+    return res.status(403).json({
+      ok: false,
+      error: 'CSRF_TOKEN_INVALID',
+      message: 'State-changing request rejected: Invalid CSRF token.',
+    });
+  }
+
+  next();
 }
 
 // Authoritative in-memory backend state initialized with zero mock data (hydrated dynamically on live scans)
@@ -240,28 +603,43 @@ async function startServer() {
 
   app.use(express.json({ limit: '5mb' }));
 
-  // Enable CORS for local dev clients (e.g. Live Server on 5500, Vite preview, etc.)
+  // Strict Origin Allowlist CORS (H-04)
+  const ALLOWED_ORIGINS = new Set([
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    ...(process.env.CORS_ALLOWED_ORIGINS
+      ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim())
+      : []),
+  ]);
+
   app.use((req: Request, res: Response, next) => {
     const origin = req.headers.origin;
-    if (origin) {
+    if (origin && ALLOWED_ORIGINS.has(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token');
     }
+    res.setHeader('Vary', 'Origin');
+
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
     }
     next();
   });
 
-  // Attach CSRF header & security headers on all /api/v1 responses
+  // Attach Security & Integrity Headers (nosniff, sameorigin)
   app.use('/api/v1', (_req: Request, res: Response, next) => {
-    res.setHeader('X-CSRF-Token', dbState.csrfToken);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     next();
   });
+
+  // Global Session-Bound CSRF Middleware for state-changing operations (H-03)
+  app.use('/api/v1', requireCsrf);
 
   // 1. Health & Brand Endpoint
   app.get('/api/v1/health', (_req: Request, res: Response) => {
@@ -287,8 +665,44 @@ async function startServer() {
     });
   });
 
-  // 2. Full State Bootstrap Endpoint for Frontend Synchronization
-  app.get('/api/v1/bootstrap', (_req: Request, res: Response) => {
+  // 2. Full State Bootstrap Endpoint for Authenticated State Synchronization (C-05)
+  app.get('/api/v1/bootstrap', requireAuth, (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
+    const isAdmin = user.role === 'ADMIN';
+    const isAnalyst = user.role === 'SECURITY_ANALYST';
+
+    // Mask sensitive integration secrets at rest and in transit
+    const safeIntegrations = dbState.integrations.map((item) => ({
+      ...item,
+      masked_secret_suffix: item.has_configured_secret
+        ? item.masked_secret_suffix || '••••••••'
+        : null,
+    }));
+
+    // Filter orgUsers to strip password hashes, salts, and internal recovery tokens
+    const safeOrgUsers = dbState.orgUsers.map((u) => ({
+      id: u.id,
+      email: u.email,
+      full_name: u.full_name,
+      job_title: u.job_title,
+      role: u.role,
+      organization_id: u.organization_id,
+      organization_name: u.organization_name,
+      organization_slug: u.organization_slug,
+      is_active: u.is_active,
+      is_email_verified: u.is_email_verified,
+      totp_enabled: u.totp_enabled,
+      created_at: u.created_at,
+      last_login_at: u.last_login_at,
+    }));
+
+    // Enforce RBAC on audit logs: Viewers get empty array, Analysts get scoped logs, Admins get full audit trail
+    const safeAuditLogs = isAdmin
+      ? dbState.auditLogs
+      : isAnalyst
+      ? dbState.auditLogs.filter((l) => l.actor_role !== 'ADMIN')
+      : [];
+
     res.json({
       settings: dbState.settings,
       targets: dbState.targets,
@@ -303,25 +717,25 @@ async function startServer() {
       ragDocuments: dbState.ragDocuments,
       reports: dbState.reports,
       externalImports: dbState.externalImports,
-      integrations: dbState.integrations,
-      orgUsers: dbState.orgUsers,
-      auditLogs: dbState.auditLogs,
+      integrations: safeIntegrations,
+      orgUsers: safeOrgUsers,
+      auditLogs: safeAuditLogs,
     });
   });
 
-  // 3. Settings & Theme Switcher Endpoint
-  app.get('/api/v1/settings', (_req: Request, res: Response) => {
+  // 3. Settings & Theme Switcher Endpoint (C-04, H-05)
+  app.get('/api/v1/settings', requireAuth, (_req: Request, res: Response) => {
     res.json(dbState.settings);
   });
 
-  app.patch('/api/v1/settings', (req: Request, res: Response) => {
+  app.patch('/api/v1/settings', requireAuth, requireRole(['ADMIN']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const {
       themeMode,
       labTargetsAllowed,
       timeoutSec,
       maxRedirects,
       maxConcurrentScans,
-      actorEmail,
     } = req.body || {};
 
     if (themeMode === 'dark' || themeMode === 'light') {
@@ -346,8 +760,8 @@ async function startServer() {
       'PLATFORM_SETTINGS_UPDATED',
       'organization_settings',
       'org-myx-enterprise-01',
-      actorEmail || 'midhun.krishnan@myx-security.io',
-      'ADMIN',
+      user.email,
+      user.role,
       {
         themeMode: dbState.settings.themeMode,
         labTargetsAllowed: dbState.settings.labTargetsAllowed,
@@ -361,30 +775,45 @@ async function startServer() {
     });
   });
 
-  // 4. Target Ownership & SSRF Allowlist Endpoints
-  app.get('/api/v1/targets', (_req: Request, res: Response) => {
+  // 4. Target Ownership & SSRF Allowlist Endpoints (C-04, Phase 6)
+  app.get('/api/v1/targets', requireAuth, (_req: Request, res: Response) => {
     res.json(dbState.targets);
   });
 
-  app.post('/api/v1/targets', (req: Request, res: Response) => {
-    const payload = req.body;
-    const token = `myx-site-verification=${Math.random().toString(36).slice(2, 14)}${Date.now().toString(36)}`;
-    const isAutoVerified = payload.verification_method === 'ADMIN_LAB_APPROVAL';
-    const newTarget = {
+  app.post('/api/v1/targets', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
+    const payload = req.body || {};
+    const rawVal = String(payload.target_value || '').trim();
+
+    // SSRF target validation guard
+    const ssrfCheck = validateTargetSsrfGuard(rawVal, dbState.settings.labTargetsAllowed, user.role === 'ADMIN');
+    if (!ssrfCheck.allowed) {
+      return res.status(403).json({
+        ok: false,
+        error: 'SSRF_GUARD_BLOCKED',
+        message: ssrfCheck.blockedReason,
+      });
+    }
+
+    const token = `myx-site-verification=${crypto.randomBytes(16).toString('hex')}`;
+    // Only administrators can perform instant lab target auto-approval
+    const isAutoVerified = payload.verification_method === 'ADMIN_LAB_APPROVAL' && user.role === 'ADMIN';
+
+    const newTarget: AuthorizedTarget = {
       id: `tgt-${Date.now()}`,
-      organization_id: 'org-myx-enterprise-01',
-      target_type: payload.target_type,
-      target_value: payload.target_value,
-      display_name: payload.display_name,
-      environment: payload.environment,
+      organization_id: user.organization_id || 'org-myx-enterprise-01',
+      target_type: payload.target_type || 'DOMAIN',
+      target_value: rawVal,
+      display_name: payload.display_name || rawVal,
+      environment: payload.environment || 'PRODUCTION',
       verification_status: isAutoVerified ? ('VERIFIED' as const) : ('PENDING' as const),
-      verification_method: payload.verification_method,
+      verification_method: payload.verification_method || 'DNS_TXT',
       verification_token: token,
       verified_at: isAutoVerified ? new Date().toISOString() : null,
       expires_at: '2027-11-14T23:59:59Z',
       allowlisted: isAutoVerified,
       attestation_notes: payload.attestation_notes || '',
-      created_by_email: payload.actor_email || 'midhun.krishnan@myx-security.io',
+      created_by_email: user.email,
       created_at: new Date().toISOString(),
     };
     dbState.targets = [newTarget, ...dbState.targets];
@@ -393,54 +822,132 @@ async function startServer() {
       'TARGET_REGISTERED',
       'authorized_target',
       newTarget.id,
-      newTarget.created_by_email,
-      'ADMIN',
+      user.email,
+      user.role,
       { target_value: newTarget.target_value, method: newTarget.verification_method }
     );
     res.status(201).json(newTarget);
   });
 
-  app.post('/api/v1/targets/:id/verify', (req: Request, res: Response) => {
+  // Genuine DNS TXT / HTTP Challenge Target Ownership Verification (Phase 6)
+  app.post('/api/v1/targets/:id/verify', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), async (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { id } = req.params;
-    const actorEmail = req.body?.actorEmail || 'midhun.krishnan@myx-security.io';
-    dbState.targets = dbState.targets.map((t) =>
-      t.id === id
-        ? {
-            ...t,
-            verification_status: 'VERIFIED' as const,
-            verified_at: new Date().toISOString(),
-            allowlisted: true,
+    const target = dbState.targets.find((t) => t.id === id);
+    if (!target) {
+      return res.status(404).json({ ok: false, error: 'TARGET_NOT_FOUND', message: 'Target not found.' });
+    }
+
+    let verified = false;
+    let failureReason = '';
+
+    if (target.verification_method === 'ADMIN_LAB_APPROVAL') {
+      if (user.role !== 'ADMIN') {
+        return res.status(403).json({
+          ok: false,
+          error: 'FORBIDDEN',
+          message: 'Manual lab target approval requires ADMINISTRATOR privileges.',
+        });
+      }
+      verified = true;
+    } else if (target.verification_method === 'DNS_TXT') {
+      const host = target.target_value.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0];
+      try {
+        const records = await dns.resolveTxt(host);
+        const allTxt = records.flat().join(' ');
+        if (allTxt.includes(target.verification_token)) {
+          verified = true;
+        } else {
+          failureReason = `DNS TXT record matching '${target.verification_token}' was not found on host ${host}.`;
+        }
+      } catch (err: any) {
+        failureReason = `DNS query failure on ${host}: ${err.message || 'TXT lookup failed'}`;
+      }
+    } else if (target.verification_method === 'HTTP_FILE') {
+      const host = target.target_value.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0];
+      const ssrfCheck = validateTargetSsrfGuard(host, dbState.settings.labTargetsAllowed, user.role === 'ADMIN');
+      if (!ssrfCheck.allowed) {
+        return res.status(403).json({
+          ok: false,
+          error: 'SSRF_GUARD_BLOCKED',
+          message: ssrfCheck.blockedReason,
+        });
+      }
+
+      try {
+        const challengeUrl = `http://${host}/.well-known/myx-challenge.txt`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const resp = await fetch(challengeUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (resp.ok) {
+          const body = await resp.text();
+          if (body.includes(target.verification_token)) {
+            verified = true;
+          } else {
+            failureReason = `Challenge file at ${challengeUrl} did not contain the verification token.`;
           }
-        : t
-    );
+        } else {
+          failureReason = `HTTP response status ${resp.status} for ${challengeUrl}.`;
+        }
+      } catch (err: any) {
+        failureReason = `Could not fetch challenge file from host: ${err.message}`;
+      }
+    } else {
+      failureReason = `Unsupported verification method: ${target.verification_method}`;
+    }
+
+    if (!verified) {
+      appendServerAuditLog(
+        'TARGET_AUTH',
+        'TARGET_VERIFICATION_FAILED',
+        'authorized_target',
+        id,
+        user.email,
+        user.role,
+        { reason: failureReason }
+      );
+      return res.status(400).json({
+        ok: false,
+        error: 'VERIFICATION_FAILED',
+        message: failureReason || 'Target ownership verification failed.',
+      });
+    }
+
+    target.verification_status = 'VERIFIED';
+    target.verified_at = new Date().toISOString();
+    target.allowlisted = true;
+
     appendServerAuditLog(
       'TARGET_AUTH',
       'TARGET_OWNERSHIP_VERIFIED',
       'authorized_target',
       id,
-      actorEmail,
-      'ADMIN'
+      user.email,
+      user.role,
+      { method: target.verification_method }
     );
     res.json({ ok: true, targets: dbState.targets });
   });
 
-  app.delete('/api/v1/targets/:id', (req: Request, res: Response) => {
+  app.delete('/api/v1/targets/:id', requireAuth, requireRole(['ADMIN']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { id } = req.params;
-    const actorEmail = (req.query.actorEmail as string) || 'midhun.krishnan@myx-security.io';
     dbState.targets = dbState.targets.filter((t) => t.id !== id);
     appendServerAuditLog(
       'TARGET_AUTH',
       'TARGET_REMOVED_FROM_ALLOWLIST',
       'authorized_target',
       id,
-      actorEmail,
-      'ADMIN'
+      user.email,
+      user.role
     );
     res.json({ ok: true, targets: dbState.targets });
   });
 
   // 5. Assessments Endpoints
-  app.post('/api/v1/assessments/run', (req: Request, res: Response) => {
+  app.post('/api/v1/assessments/run', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const run = req.body || {};
     const targetVal = (
       run.target_value ||
@@ -452,7 +959,7 @@ async function startServer() {
     const ssrfResult = validateTargetSsrfGuard(
       targetVal,
       dbState.settings.labTargetsAllowed,
-      true
+      user.role === 'ADMIN'
     );
     if (!ssrfResult.allowed) {
       res.status(403).json({
@@ -462,14 +969,15 @@ async function startServer() {
       });
       return;
     }
+    run.initiated_by_email = user.email;
     dbState.assessments = [run, ...dbState.assessments];
     appendServerAuditLog(
       'ASSESSMENT',
-      `${run.assessment_type}_COMPLETED`,
+      `${run.assessment_type || 'SECURITY'}_COMPLETED`,
       'assessment_run',
-      run.id,
-      run.initiated_by_email || 'midhun.krishnan@myx-security.io',
-      'SECURITY_ANALYST',
+      run.id || `run-${Date.now()}`,
+      user.email,
+      user.role,
       { target: run.target_value, score: run.score }
     );
     res.status(201).json(run);
@@ -955,8 +1463,9 @@ async function startServer() {
     };
   };
 
-  app.post('/api/v1/assessments/scan-website', async (req: Request, res: Response) => {
+  app.post('/api/v1/assessments/scan-website', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), async (req: Request, res: Response) => {
     try {
+      const user = (req as any).user as StoredUserAccount;
       // Forward to FastAPI if available
       try {
         const fastApiResp = await fetch('http://127.0.0.1:8000/api/v1/assessments/scan-website', {
@@ -980,8 +1489,8 @@ async function startServer() {
         // FastAPI unavailable, fallback to local Express engine
       }
 
-      const { targetUrl, actorEmail } = req.body || {};
-      const result = await executeWebsiteScanCore(targetUrl, undefined, actorEmail);
+      const { targetUrl } = req.body || {};
+      const result = await executeWebsiteScanCore(targetUrl, undefined, user.email);
       if (result.error) {
         res.status(result.status || 400).json(result);
         return;
@@ -992,8 +1501,9 @@ async function startServer() {
     }
   });
 
-  app.post('/api/v1/assessments/website/run', async (req: Request, res: Response) => {
+  app.post('/api/v1/assessments/website/run', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), async (req: Request, res: Response) => {
     try {
+      const user = (req as any).user as StoredUserAccount;
       // Forward to FastAPI if available
       try {
         const fastApiResp = await fetch('http://127.0.0.1:8000/api/v1/assessments/website/run', {
@@ -1017,7 +1527,7 @@ async function startServer() {
         // FastAPI unavailable, fallback to local Express engine
       }
 
-      const { target_id, targetUrl, target_value, target: rawTarget, actorEmail } = req.body || {};
+      const { target_id, targetUrl, target_value, target: rawTarget } = req.body || {};
       const matchedTarget = dbState.targets.find((t: any) => target_id && t.id === target_id);
       const candidateUrl = (
         matchedTarget?.target_value ||
@@ -1037,7 +1547,7 @@ async function startServer() {
         return;
       }
 
-      const result = await executeWebsiteScanCore(candidateUrl, target_id, actorEmail);
+      const result = await executeWebsiteScanCore(candidateUrl, target_id, user.email);
       if (result.error) {
         res.status(result.status || 400).json(result);
         return;
@@ -1049,7 +1559,7 @@ async function startServer() {
   });
 
   // History & Reporting Endpoints
-  app.get('/api/v1/assessments/history', (req: Request, res: Response) => {
+  app.get('/api/v1/assessments/history', requireAuth, (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = parseInt(req.query.offset as string) || 0;
     const search = ((req.query.search as string) || '').toLowerCase().trim();
@@ -1081,7 +1591,7 @@ async function startServer() {
     res.json({ assessments: paginated, total, limit, offset });
   });
 
-  app.get('/api/v1/assessments/compare', (req: Request, res: Response) => {
+  app.get('/api/v1/assessments/compare', requireAuth, (req: Request, res: Response) => {
     const baseId = req.query.base_id as string;
     const targetId = req.query.target_id as string;
 
@@ -1152,7 +1662,7 @@ async function startServer() {
     });
   });
 
-  app.get('/api/v1/assessments/:id/pdf', async (req: Request, res: Response) => {
+  app.get('/api/v1/assessments/:id/pdf', requireAuth, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
       // Proxy request to FastAPI ReportLab engine
@@ -1547,10 +2057,11 @@ async function startServer() {
     };
   };
 
-  app.post('/api/v1/assessments/network/scan', async (req: Request, res: Response) => {
+  app.post('/api/v1/assessments/network/scan', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), async (req: Request, res: Response) => {
     try {
-      const { targetHost, profile, customPorts, actorEmail } = req.body || {};
-      const result = await executeNetworkScanCore(targetHost, profile, customPorts, actorEmail);
+      const user = (req as any).user as StoredUserAccount;
+      const { targetHost, profile, customPorts } = req.body || {};
+      const result = await executeNetworkScanCore(targetHost, profile, customPorts, user.email);
       if (result.error) {
         res.status(result.status || 400).json(result);
         return;
@@ -1561,12 +2072,13 @@ async function startServer() {
     }
   });
 
-  app.post('/api/v1/assessments/network/run', async (req: Request, res: Response) => {
+  app.post('/api/v1/assessments/network/run', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), async (req: Request, res: Response) => {
     try {
-      const { target_id, profile, customPorts, actorEmail } = req.body || {};
+      const user = (req as any).user as StoredUserAccount;
+      const { target_id, profile, customPorts } = req.body || {};
       const target = dbState.targets.find((t: any) => t.id === target_id);
       const targetHost = target?.target_value || target_id;
-      const result = await executeNetworkScanCore(targetHost, profile, customPorts, actorEmail);
+      const result = await executeNetworkScanCore(targetHost, profile, customPorts, user.email);
       if (result.error) {
         res.status(result.status || 400).json(result);
         return;
@@ -1578,13 +2090,14 @@ async function startServer() {
   });
 
   // 6. Windows 10/11 Agent Management Endpoints
-  app.post('/api/v1/windows-agent/enroll', (req: Request, res: Response) => {
-    const { hostname, displayName, osEdition, actorEmail } = req.body;
+  app.post('/api/v1/windows-agent/enroll', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
+    const { hostname, displayName, osEdition } = req.body || {};
     const id = `agt-${Date.now()}`;
     const isHome = String(osEdition || '').toLowerCase().includes('home');
     const newAgent: WindowsAgentRecord = {
       id,
-      organization_id: 'org-myx-enterprise-01',
+      organization_id: user.organization_id || 'org-myx-enterprise-01',
       hostname: String(hostname || 'WIN11-HOST').toUpperCase(),
       display_name: displayName || hostname,
       os_edition: osEdition || 'Microsoft Windows 11 Pro',
@@ -1596,7 +2109,7 @@ async function startServer() {
       status: 'ACTIVE',
       last_heartbeat_at: new Date().toISOString(),
       last_ip_address: '10.24.14.88',
-      enrolled_by_email: actorEmail || 'midhun.krishnan@myx-security.io',
+      enrolled_by_email: user.email,
       created_at: new Date().toISOString(),
       revoked_at: null,
     };
@@ -1623,20 +2136,20 @@ async function startServer() {
       'WINDOWS_AGENT_ENROLLED',
       'windows_agent',
       id,
-      newAgent.enrolled_by_email,
-      'ADMIN',
+      user.email,
+      user.role,
       { hostname: newAgent.hostname, os_edition: newAgent.os_edition }
     );
     res.status(201).json(newAgent);
   });
 
-  app.post('/api/v1/windows-agent/:id/revoke', (req: Request, res: Response) => {
+  app.post('/api/v1/windows-agent/:id/revoke', requireAuth, requireRole(['ADMIN']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { id } = req.params;
-    const actorEmail = req.body?.actorEmail || 'midhun.krishnan@myx-security.io';
     dbState.windowsAgents = dbState.windowsAgents.map((a) =>
       a.id === id ? { ...a, status: 'REVOKED' as const, revoked_at: new Date().toISOString() } : a
     );
-    appendServerAuditLog('AGENT', 'WINDOWS_AGENT_REVOKED', 'windows_agent', id, actorEmail, 'ADMIN');
+    appendServerAuditLog('AGENT', 'WINDOWS_AGENT_REVOKED', 'windows_agent', id, user.email, user.role);
     res.json({ ok: true, windowsAgents: dbState.windowsAgents });
   });
 
@@ -1832,14 +2345,14 @@ async function startServer() {
     return analysis;
   }
 
-  app.post(['/api/v1/linkguard/inspect', '/api/v1/intelligence/linkguard/analyze'], async (req: Request, res: Response) => {
+  app.post(['/api/v1/linkguard/inspect', '/api/v1/intelligence/linkguard/analyze'], requireAuth, async (req: Request, res: Response) => {
     const { url, forceRefresh } = req.body;
     const analysis = analyzeUrlWithLinkGuardLexical(String(url || ''));
     const enriched = await enrichLinkGuardAnalysis(analysis, Boolean(forceRefresh));
     res.json(enriched);
   });
 
-  app.post('/api/v1/analyzers/dns', (req: Request, res: Response) => {
+  app.post('/api/v1/analyzers/dns', requireAuth, (req: Request, res: Response) => {
     const { spfRaw, dmarcRaw } = req.body;
     const analysis = evaluateSpfAndDmarcRecords(
       spfRaw ? [String(spfRaw)] : [],
@@ -1848,12 +2361,12 @@ async function startServer() {
     res.json(analysis);
   });
 
-  // 8. Findings Endpoints
-  app.patch('/api/v1/findings/:id/status', (req: Request, res: Response) => {
+  // 8. Findings Endpoints (C-04, H-05)
+  app.patch('/api/v1/findings/:id/status', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { id } = req.params;
-    const { newStatus, actorEmail } = req.body as {
+    const { newStatus } = req.body as {
       newStatus: FindingStatus;
-      actorEmail: string;
     };
     dbState.findings = dbState.findings.map((f) => {
       if (f.id !== id) return f;
@@ -1864,7 +2377,7 @@ async function startServer() {
         audit_trail: [
           {
             id: `aud-${Date.now()}`,
-            actor_email: actorEmail || 'midhun.krishnan@myx-security.io',
+            actor_email: user.email,
             action: 'STATUS_CHANGED',
             previous_value: f.status,
             new_value: newStatus,
@@ -1879,16 +2392,17 @@ async function startServer() {
       'FINDING_STATUS_UPDATED',
       'finding',
       id,
-      actorEmail || 'midhun.krishnan@myx-security.io',
-      'SECURITY_ANALYST',
+      user.email,
+      user.role,
       { new_status: newStatus }
     );
     res.json({ ok: true, findings: dbState.findings });
   });
 
-  app.patch('/api/v1/findings/:id/assign', (req: Request, res: Response) => {
+  app.patch('/api/v1/findings/:id/assign', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { id } = req.params;
-    const { analystEmail, actorEmail } = req.body;
+    const { analystEmail } = req.body;
     dbState.findings = dbState.findings.map((f) =>
       f.id === id ? { ...f, assigned_analyst_email: analystEmail } : f
     );
@@ -1897,16 +2411,17 @@ async function startServer() {
       'FINDING_ASSIGNED',
       'finding',
       id,
-      actorEmail || 'midhun.krishnan@myx-security.io',
-      'SECURITY_ANALYST',
+      user.email,
+      user.role,
       { assigned_to: analystEmail }
     );
     res.json({ ok: true, findings: dbState.findings });
   });
 
-  app.post('/api/v1/findings/:id/comments', (req: Request, res: Response) => {
+  app.post('/api/v1/findings/:id/comments', requireAuth, (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { id } = req.params;
-    const { body, isRetest, retestOutcome, actorEmail, actorRole } = req.body;
+    const { body, isRetest, retestOutcome } = req.body;
     dbState.findings = dbState.findings.map((f) => {
       if (f.id !== id) return f;
       const nextStatus: FindingStatus =
@@ -1922,8 +2437,8 @@ async function startServer() {
           ...f.comments,
           {
             id: `cmt-${Date.now()}`,
-            author_email: actorEmail || 'midhun.krishnan@myx-security.io',
-            author_role: actorRole || 'ADMIN',
+            author_email: user.email,
+            author_role: user.role,
             comment_body: body,
             is_retest_note: Boolean(isRetest),
             retest_outcome: retestOutcome || null,
@@ -1935,14 +2450,15 @@ async function startServer() {
     res.json({ ok: true, findings: dbState.findings });
   });
 
-  app.post('/api/v1/findings', (req: Request, res: Response) => {
+  app.post('/api/v1/findings', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const payload = req.body;
     const codeNumber = 46 + dbState.findings.length;
     const newFinding: VulnerabilityFinding = {
       ...payload,
       id: `fnd-${Date.now()}`,
       finding_code: `MYX-FND-2026-00${codeNumber}`,
-      organization_id: 'org-myx-enterprise-01',
+      organization_id: user.organization_id || 'org-myx-enterprise-01',
       first_detected_at: new Date().toISOString(),
       last_seen_at: new Date().toISOString(),
       resolved_at: null,
@@ -1951,7 +2467,7 @@ async function startServer() {
       audit_trail: [
         {
           id: `aud-${Date.now()}`,
-          actor_email: payload.assigned_analyst_email || 'midhun.krishnan@myx-security.io',
+          actor_email: user.email,
           action: 'MANUAL_FINDING_LOGGED',
           previous_value: null,
           new_value: payload.status || 'Open',
@@ -1960,6 +2476,15 @@ async function startServer() {
       ],
     };
     dbState.findings = [newFinding, ...dbState.findings];
+    appendServerAuditLog(
+      'FINDING',
+      'FINDING_CREATED',
+      'finding',
+      newFinding.id,
+      user.email,
+      user.role,
+      { code: newFinding.finding_code, title: newFinding.title }
+    );
     res.status(201).json(newFinding);
   });
 
@@ -2057,7 +2582,7 @@ async function startServer() {
   }
 
   // 9. AI Security Analyst & Copilot Endpoints (Automated Failover + Grounded Fallback)
-  app.post('/api/v1/ai/analyst/message', async (req: Request, res: Response) => {
+  app.post('/api/v1/ai/analyst/message', requireAuth, async (req: Request, res: Response) => {
     const { sessionId, promptText, modelTier } = req.body as {
       sessionId: string;
       promptText: string;
@@ -2156,7 +2681,7 @@ Query: ${promptText}`,
     });
   });
 
-  app.post('/api/v1/ai/posture-briefing', async (_req: Request, res: Response) => {
+  app.post('/api/v1/ai/posture-briefing', requireAuth, async (_req: Request, res: Response) => {
     const startMs = Date.now();
     const openFindings = dbState.findings.filter(
       (f) => f.status === 'Open' || f.status === 'In Progress' || f.status === 'Reopened'
@@ -2208,7 +2733,7 @@ Query: ${promptText}`,
     });
   });
 
-  app.post('/api/v1/ai/remediate-finding', async (req: Request, res: Response) => {
+  app.post('/api/v1/ai/remediate-finding', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), async (req: Request, res: Response) => {
     const { findingId } = req.body as { findingId: string };
     const startMs = Date.now();
     const finding =
@@ -2248,7 +2773,7 @@ Query: ${promptText}`,
     });
   });
 
-  app.post('/api/v1/ai/generate-report-section', async (req: Request, res: Response) => {
+  app.post('/api/v1/ai/generate-report-section', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), async (req: Request, res: Response) => {
     const { reportId, sectionId, sectionTitle } = req.body as {
       reportId: string;
       sectionId: string;
@@ -2292,7 +2817,7 @@ Query: ${promptText}`,
     });
   });
 
-  app.post('/api/v1/ai/rag/ingest', (req: Request, res: Response) => {
+  app.post('/api/v1/ai/rag/ingest', requireAuth, requireRole(['ADMIN']), (req: Request, res: Response) => {
     const { title, sourceType, reference } = req.body;
     const newDoc = {
       id: `rag-doc-${Date.now()}`,
@@ -2307,10 +2832,11 @@ Query: ${promptText}`,
     res.status(201).json(newDoc);
   });
 
-  // 10. Reports & Scanner Import Endpoints
-  app.patch('/api/v1/reports/:reportId/sections/:sectionId', (req: Request, res: Response) => {
+  // 10. Reports & Scanner Import Endpoints (C-04, H-05)
+  app.patch('/api/v1/reports/:reportId/sections/:sectionId', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { reportId, sectionId } = req.params;
-    const { contentMarkdown, editorName } = req.body;
+    const { contentMarkdown } = req.body;
     dbState.reports = dbState.reports.map((r) => {
       if (r.id !== reportId) return r;
       return {
@@ -2322,7 +2848,7 @@ Query: ${promptText}`,
                 ...sec,
                 content_markdown: contentMarkdown,
                 review_status: 'HUMAN_EDITED' as const,
-                last_edited_by: editorName || 'Midhun Krishnan',
+                last_edited_by: user.full_name || user.email,
               }
             : sec
         ),
@@ -2331,9 +2857,9 @@ Query: ${promptText}`,
     res.json({ ok: true, reports: dbState.reports });
   });
 
-  app.post('/api/v1/reports/:reportId/approve', (req: Request, res: Response) => {
+  app.post('/api/v1/reports/:reportId/approve', requireAuth, requireRole(['ADMIN']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { reportId } = req.params;
-    const { approverEmail } = req.body;
     const now = new Date().toISOString();
     dbState.reports = dbState.reports.map((r) => {
       if (r.id !== reportId) return r;
@@ -2341,7 +2867,7 @@ Query: ${promptText}`,
         ...r,
         status: 'APPROVED' as const,
         current_version: 'v2.0',
-        approved_by_email: approverEmail || 'midhun.krishnan@myx-security.io',
+        approved_by_email: user.email,
         approved_at: now,
         updated_at: now,
         sections: r.sections.map((s: any) => ({ ...s, review_status: 'REVIEWER_APPROVED' as const })),
@@ -2352,7 +2878,7 @@ Query: ${promptText}`,
             status: 'APPROVED' as const,
             change_summary: 'Human reviewer approval gate completed for final publication.',
             is_ai_generated_draft: false,
-            created_by_email: approverEmail || 'midhun.krishnan@myx-security.io',
+            created_by_email: user.email,
             created_at: now,
           },
         ],
@@ -2363,34 +2889,45 @@ Query: ${promptText}`,
       'REPORT_APPROVED_FOR_PUBLICATION',
       'report',
       reportId,
-      approverEmail || 'midhun.krishnan@myx-security.io',
-      'ADMIN'
+      user.email,
+      user.role
     );
     res.json({ ok: true, reports: dbState.reports });
   });
 
-  app.post('/api/v1/reports/import-scanner', (req: Request, res: Response) => {
-    const { scannerType, filename, fileSizeBytes, actorEmail } = req.body;
+  app.post('/api/v1/reports/import-scanner', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
+    const { scannerType, filename, fileSizeBytes } = req.body || {};
     const record = {
       id: `imp-${Date.now()}`,
-      scanner_type: scannerType,
-      original_filename: filename,
+      scanner_type: scannerType || 'GENERIC_PARSER',
+      original_filename: filename || 'scanner-import.xml',
       file_sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
       file_size_bytes: Number(fileSizeBytes) || 24576,
       parse_status: 'PARSED' as const,
       findings_imported_count: 3,
       xxe_guard_verified: true,
-      uploaded_by_email: actorEmail || 'midhun.krishnan@myx-security.io',
+      uploaded_by_email: user.email,
       created_at: new Date().toISOString(),
     };
     dbState.externalImports = [record, ...dbState.externalImports];
+    appendServerAuditLog(
+      'REPORT',
+      'SCANNER_REPORT_IMPORTED',
+      'external_import',
+      record.id,
+      user.email,
+      user.role,
+      { scanner_type: record.scanner_type, filename: record.original_filename }
+    );
     res.status(201).json(record);
   });
 
-  // 11. Integrations Endpoints
-  app.post('/api/v1/integrations/:provider/secret', (req: Request, res: Response) => {
+  // 11. Integrations Endpoints (C-04, H-05)
+  app.post('/api/v1/integrations/:provider/secret', requireAuth, requireRole(['ADMIN']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { provider } = req.params;
-    const { rawSecret, actorEmail } = req.body;
+    const { rawSecret } = req.body;
     const suffix = String(rawSecret || '').trim().slice(-4).toUpperCase() || '8F2A';
     dbState.integrations = dbState.integrations.map((intg) =>
       intg.provider === provider
@@ -2409,14 +2946,14 @@ Query: ${promptText}`,
       'INTEGRATION_SECRET_ROTATED',
       'integration',
       provider,
-      actorEmail || 'midhun.krishnan@myx-security.io',
-      'ADMIN',
+      user.email,
+      user.role,
       { provider, write_only_encrypted: true }
     );
     res.json({ ok: true, integrations: dbState.integrations });
   });
 
-  app.post('/api/v1/integrations/:provider/test', (req: Request, res: Response) => {
+  app.post('/api/v1/integrations/:provider/test', requireAuth, requireRole(['ADMIN', 'SECURITY_ANALYST']), (req: Request, res: Response) => {
     const { provider } = req.params;
     const now = new Date().toISOString();
     dbState.integrations = dbState.integrations.map(
@@ -2443,10 +2980,11 @@ Query: ${promptText}`,
     });
   });
 
-  // 12. Admin Users & RBAC Endpoints
-  app.patch('/api/v1/admin/users/:userId/role', (req: Request, res: Response) => {
+  // 12. Admin Users & RBAC Endpoints (C-04, H-05)
+  app.patch('/api/v1/admin/users/:userId/role', requireAuth, requireRole(['ADMIN']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { userId } = req.params;
-    const { newRole, actorEmail } = req.body;
+    const { newRole } = req.body;
     dbState.orgUsers = dbState.orgUsers.map((u) =>
       u.id === userId ? { ...u, role: newRole } : u
     );
@@ -2464,16 +3002,16 @@ Query: ${promptText}`,
       'USER_ROLE_UPDATED',
       'user',
       userId,
-      actorEmail || 'midhun.krishnan@myx-security.io',
-      'ADMIN',
+      user.email,
+      user.role,
       { new_role: newRole }
     );
     res.json({ ok: true, orgUsers: dbState.orgUsers });
   });
 
-  app.patch('/api/v1/admin/users/:userId/toggle-active', (req: Request, res: Response) => {
+  app.patch('/api/v1/admin/users/:userId/toggle-active', requireAuth, requireRole(['ADMIN']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
     const { userId } = req.params;
-    const { actorEmail } = req.body;
     dbState.orgUsers = dbState.orgUsers.map((u) =>
       u.id === userId ? { ...u, is_active: !u.is_active } : u
     );
@@ -2491,14 +3029,14 @@ Query: ${promptText}`,
       'USER_ACCOUNT_STATUS_TOGGLED',
       'user',
       userId,
-      actorEmail || 'midhun.krishnan@myx-security.io',
-      'ADMIN'
+      user.email,
+      user.role
     );
     res.json({ ok: true, orgUsers: dbState.orgUsers });
   });
 
-  // 13. Verified Antigravity Project ZIP Export Endpoints (Base64 JSON + Binary Attachment)
-  app.get('/api/v1/export/project-zip', (_req: Request, res: Response) => {
+  // 13. Verified Antigravity Project ZIP Export Endpoints (C-04, Phase 13)
+  app.get('/api/v1/export/project-zip', requireAuth, requireRole(['ADMIN']), (_req: Request, res: Response) => {
     try {
       const zipPath = path.join(
         __dirname,
@@ -2524,7 +3062,7 @@ Query: ${promptText}`,
     }
   });
 
-  app.get('/api/v1/export/project-zip-binary', (_req: Request, res: Response) => {
+  app.get('/api/v1/export/project-zip-binary', requireAuth, requireRole(['ADMIN']), (_req: Request, res: Response) => {
     const zipPath = path.join(
       __dirname,
       'public',
@@ -2539,7 +3077,7 @@ Query: ${promptText}`,
     res.sendFile(zipPath);
   });
 
-  // 14. Real-Life Self-Service Authentication & Registration Endpoints
+  // 14. Real-Life Self-Service Authentication & Registration Endpoints (C-03, H-02)
   app.post('/api/v1/auth/register', (req: Request, res: Response) => {
     const { fullName, email, password, jobTitle, role } = req.body || {};
     const cleanName = String(fullName || '').trim();
@@ -2564,11 +3102,13 @@ Query: ${promptText}`,
       });
     }
 
-    if (cleanPass.length < 10) {
+    // Strict Password Complexity Policy (H-02)
+    const complexityCheck = validatePasswordComplexity(cleanPass);
+    if (!complexityCheck.valid) {
       return res.status(400).json({
         ok: false,
         error: 'WEAK_PASSWORD',
-        message: 'Password must be at least 10 characters long to satisfy security policies.',
+        message: complexityCheck.reason || 'Password does not meet enterprise complexity requirements.',
       });
     }
 
@@ -2582,8 +3122,9 @@ Query: ${promptText}`,
       });
     }
 
-    const assignedRole: 'ADMIN' | 'SECURITY_ANALYST' | 'VIEWER' =
-      role === 'ADMIN' ? 'ADMIN' : role === 'VIEWER' ? 'VIEWER' : 'SECURITY_ANALYST';
+    // Security Control: Self-service registration NEVER grants ADMIN privileges
+    const assignedRole: 'SECURITY_ANALYST' | 'VIEWER' =
+      role === 'VIEWER' ? 'VIEWER' : 'SECURITY_ANALYST';
 
     const newUser: StoredUserAccount = {
       id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -2600,12 +3141,13 @@ Query: ${promptText}`,
       totp_enabled: false,
       created_at: new Date().toISOString(),
       last_login_at: new Date().toISOString(),
+      must_change_password: false,
     };
 
     users.push(newUser);
     saveRegisteredUsers(users);
 
-    // Sync with dbState.orgUsers so it appears in admin user management
+    // Sync in-memory user directory
     dbState.orgUsers = [
       ...dbState.orgUsers.filter((u) => u.email.toLowerCase() !== cleanEmail),
       {
@@ -2657,32 +3199,62 @@ Query: ${promptText}`,
     });
   });
 
+  // Authenticated Login with Rate-Limiting & Session Token Rotation (C-03, H-02)
   app.post('/api/v1/auth/login', (req: Request, res: Response) => {
     const { email, password } = req.body || {};
     const cleanEmail = String(email || '').trim().toLowerCase();
     const cleanPassword = String(password || '');
+    const clientIp = req.ip || (req.socket ? req.socket.remoteAddress : '127.0.0.1') || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'Unknown Browser';
 
-    const users = loadRegisteredUsers();
-    const user = users.find(
-      (u) =>
-        u.email.toLowerCase() === cleanEmail ||
-        (cleanEmail === 'admin' && u.email === 'midhun.krishnan@myx-security.io')
-    );
-
-    if (!user) {
+    // 1. Enforce Per-IP and Per-Account Rate Limiting (H-02)
+    const ipRateLimit = checkLoginRateLimit(`ip:${clientIp}`);
+    if (!ipRateLimit.allowed) {
       appendServerAuditLog(
         'RBAC',
-        'AUTHENTICATION_FAILED_UNKNOWN_USER',
+        'LOGIN_RATE_LIMIT_BLOCKED',
+        'ip_address',
+        clientIp,
+        cleanEmail || 'anonymous',
+        'VIEWER',
+        { retryAfterSec: ipRateLimit.retryAfterSec }
+      );
+      return res.status(429).json({
+        ok: false,
+        error: 'RATE_LIMIT_EXCEEDED',
+        message: `Too many failed login attempts from this network. Please wait ${ipRateLimit.retryAfterSec} seconds before retrying.`,
+      });
+    }
+
+    const emailRateLimit = checkLoginRateLimit(`email:${cleanEmail}`);
+    if (!emailRateLimit.allowed) {
+      return res.status(429).json({
+        ok: false,
+        error: 'ACCOUNT_LOCKED_TEMPORARILY',
+        message: `Account is temporarily locked due to excessive failed attempts. Please retry in ${emailRateLimit.retryAfterSec} seconds.`,
+      });
+    }
+
+    const users = loadRegisteredUsers();
+    const user = users.find((u) => u.email.toLowerCase() === cleanEmail);
+
+    // Generic error message for both non-existent account and wrong password (prevents account enumeration)
+    if (!user) {
+      recordLoginFailure(`ip:${clientIp}`);
+      recordLoginFailure(`email:${cleanEmail}`);
+      appendServerAuditLog(
+        'RBAC',
+        'AUTHENTICATION_FAILED_GENERIC',
         'user',
         'unknown',
         cleanEmail || 'anonymous',
         'VIEWER',
-        { error: 'USER_NOT_FOUND' }
+        { reason: 'USER_NOT_FOUND', ip: clientIp }
       );
       return res.status(401).json({
         ok: false,
         error: 'INVALID_CREDENTIALS',
-        message: 'No account registered with this email address. Please click Register to create your account.',
+        message: 'Invalid email or password. Please verify your credentials and try again.',
       });
     }
 
@@ -2694,26 +3266,31 @@ Query: ${promptText}`,
       });
     }
 
-    const isValid =
-      verifyUserPassword(cleanPassword, user.password_hash) ||
-      (user.email === 'midhun.krishnan@myx-security.io' && cleanPassword === 'Midhun@1234');
+    // Cryptographic Password Verification (Zero plaintext fallbacks)
+    const isValid = verifyUserPassword(cleanPassword, user.password_hash);
 
     if (!isValid) {
+      recordLoginFailure(`ip:${clientIp}`);
+      recordLoginFailure(`email:${cleanEmail}`);
       appendServerAuditLog(
         'RBAC',
-        'AUTHENTICATION_FAILED_BAD_PASSWORD',
+        'AUTHENTICATION_FAILED_GENERIC',
         'user',
         user.id,
         user.email,
         user.role,
-        { error: 'PASSWORD_MISMATCH' }
+        { reason: 'PASSWORD_MISMATCH', ip: clientIp }
       );
       return res.status(401).json({
         ok: false,
         error: 'INVALID_CREDENTIALS',
-        message: 'Incorrect password. Please verify your password and try again.',
+        message: 'Invalid email or password. Please verify your credentials and try again.',
       });
     }
+
+    // Clear rate-limit counters upon successful authentication
+    clearLoginRateLimit(`ip:${clientIp}`);
+    clearLoginRateLimit(`email:${cleanEmail}`);
 
     user.last_login_at = new Date().toISOString();
     saveRegisteredUsers(users);
@@ -2722,6 +3299,9 @@ Query: ${promptText}`,
     dbState.orgUsers = dbState.orgUsers.map((u) =>
       u.id === user.id ? { ...u, last_login_at: user.last_login_at } : u
     );
+
+    // Create Genuine Server-Side Cryptographic Session (C-03)
+    const { session, rawToken } = createSession(user, clientIp, userAgent);
 
     const safeUserProfile = {
       id: user.id,
@@ -2746,17 +3326,22 @@ Query: ${promptText}`,
       user.id,
       user.email,
       user.role,
-      { method: 'Argon2id/scrypt' }
+      { sessionId: session.id, ip: clientIp }
     );
 
+    // Issue Secure HttpOnly SameSite Session Cookie
+    const isProduction = process.env.NODE_ENV === 'production';
     res.setHeader(
       'Set-Cookie',
-      `myx_session=usr-session-${user.id}-${Date.now()}; HttpOnly; SameSite=Lax; Path=/`
+      `myx_session=${rawToken}; HttpOnly; SameSite=Lax; Path=/${isProduction ? '; Secure' : ''}; Max-Age=86400`
     );
+    res.setHeader('X-CSRF-Token', session.csrfToken);
 
     return res.status(200).json({
       ok: true,
       user: safeUserProfile,
+      token: rawToken,
+      csrfToken: session.csrfToken,
       requires2FA: user.totp_enabled,
       message: 'Credentials verified successfully.',
     });
@@ -2781,28 +3366,38 @@ Query: ${promptText}`,
     });
   });
 
-  app.post('/api/v1/auth/logout', (_req: Request, res: Response) => {
+  app.post('/api/v1/auth/logout', (req: Request, res: Response) => {
+    const token = extractRawSessionToken(req);
+    if (token) {
+      destroySessionByToken(token);
+    }
     res.setHeader('Set-Cookie', 'myx_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
-    res.json({ ok: true, message: 'Session terminated.' });
+    res.json({ ok: true, message: 'Session successfully terminated.' });
   });
 
-  app.get('/api/v1/auth/me', (req: Request, res: Response) => {
-    const users = loadRegisteredUsers();
-    const admin = users[0] || {
-      id: 'usr-admin-001',
-      email: 'midhun.krishnan@myx-security.io',
-      full_name: 'Midhun Krishnan',
-      job_title: 'Principal Security Architect',
-      role: 'ADMIN',
-      organization_id: 'org-myx-enterprise-01',
-      organization_name: 'MYX Defense Operations Lab',
-      organization_slug: 'myx-defense-ops',
-      is_active: true,
-      is_email_verified: true,
-      totp_enabled: true,
+  // Protected Session Identity Endpoint (C-03)
+  app.get('/api/v1/auth/me', requireAuth, (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
+    const session = (req as any).session as ServerSession;
+
+    const safeUserProfile = {
+      id: user.id,
+      email: user.email,
+      full_name: user.full_name,
+      job_title: user.job_title,
+      role: user.role,
+      organization_id: user.organization_id,
+      organization_name: user.organization_name,
+      organization_slug: user.organization_slug,
+      is_active: user.is_active,
+      is_email_verified: user.is_email_verified,
+      totp_enabled: user.totp_enabled,
+      last_login_at: user.last_login_at,
+      created_at: user.created_at,
+      csrfToken: session.csrfToken,
     };
 
-    res.json(admin);
+    res.json(safeUserProfile);
   });
 
   // Vite middleware for development or static serving for production

@@ -9,3 +9,29 @@ __pycache__/
 .pytest_cache/
 .env*
 !.env.example
+!backend/.env.example
+
+# Sensitive database files & runtime user stores
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+backend/*.db
+backend/*.sqlite*
+registered_users.json
+backend/registered_users.json
+runtime_users.json
+backend/runtime_users.json
+runtime/
+backend/runtime/
+uploads/
+reports/*.pdf
+*.pem
+*.key
+*.cert
+*.pfx
+
+# Python virtual environments
+.venv/
+venv/
+ENV/

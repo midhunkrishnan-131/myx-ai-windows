@@ -45,13 +45,18 @@ def init_database_and_seeds():
             db.flush()
             print(f"[MYX AI Database] Provisioned default organization: {org.name} ({org.slug})")
 
-        # 3. Default Admin User
+        # 3. Default Admin User (Secure Bootstrap - Never overwrite existing credentials)
         admin_email = "midhun.krishnan@myx-security.io"
         admin_user = db.query(User).filter(User.email == admin_email).first()
         if not admin_user:
+            import secrets
+            initial_admin_pass = os.getenv("ADMIN_INITIAL_PASSWORD")
+            if not initial_admin_pass:
+                initial_admin_pass = secrets.token_urlsafe(18)
+                print(f"[SECURITY ALERT] Initial Administrator Provisioned. One-time bootstrap password: {initial_admin_pass}")
             admin_user = User(
                 email=admin_email,
-                password_hash=hash_password_argon2id("Midhun@1234"),
+                password_hash=hash_password_argon2id(initial_admin_pass),
                 full_name="Midhun Krishnan",
                 job_title="Principal Security Architect",
                 is_active=True,
@@ -59,9 +64,7 @@ def init_database_and_seeds():
             )
             db.add(admin_user)
             db.flush()
-        else:
-            admin_user.password_hash = hash_password_argon2id("Midhun@1234")
-            db.commit()
+        # Existing admin user credentials are strictly preserved and never overwritten
 
         # 4. Membership
         existing_membership = db.query(OrganizationMembership).filter(

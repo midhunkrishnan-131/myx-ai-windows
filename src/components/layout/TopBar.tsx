@@ -87,20 +87,15 @@ export const TopBar: React.FC<{
         )}
 
         <div className="flex items-center gap-1.5">
-          <label htmlFor="rbac-role-select" className="text-xs text-[#A7B0BC] hidden lg:inline">
+          <span className="text-xs text-[#A7B0BC] hidden lg:inline">
             Active RBAC Role:
-          </label>
-          <select
-            id="rbac-role-select"
-            aria-label="Active RBAC Role"
-            value={user?.role || 'ADMIN'}
-            onChange={(e) => switchRoleForDemo(e.target.value as UserRole)}
-            className="px-2.5 py-1.5 bg-[#141920] border border-[#29313B] rounded-md text-xs font-mono text-[#F5F7FA] focus:outline-none focus:border-[#D6AE45]"
+          </span>
+          <span
+            className="px-2.5 py-1.5 bg-[#141920] border border-[#29313B] rounded-md text-xs font-mono text-[#D6AE45] font-semibold whitespace-nowrap"
+            title="Role derived from verified server session"
           >
-            <option value="ADMIN">Role: ADMIN</option>
-            <option value="SECURITY_ANALYST">Role: SECURITY_ANALYST</option>
-            <option value="VIEWER">Role: VIEWER (Read-Only)</option>
-          </select>
+            {user?.role || 'VIEWER'}
+          </span>
         </div>
 
         <Link
