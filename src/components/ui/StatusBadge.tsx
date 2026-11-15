@@ -1,6 +1,10 @@
 import React from 'react';
 
-export const StatusBadge: React.FC<{ status?: string | null }> = ({ status = '' }) => {
+export const StatusBadge: React.FC<{
+  status?: string | null;
+  icon?: React.ReactNode;
+  className?: string;
+}> = ({ status = '', icon, className = '' }) => {
   const safeStatus = typeof status === 'string' ? status : (status ? String(status) : 'UNKNOWN');
   const normalized = safeStatus.toUpperCase();
 
@@ -49,18 +53,34 @@ export const StatusBadge: React.FC<{ status?: string | null }> = ({ status = '' 
       'REVOKED',
       'EXPIRED',
       'KNOWN MALICIOUS MATCH',
+      'MALICIOUS MATCH',
+      'MALICIOUS',
+      'MALWARE',
+      'PHISHING',
     ].includes(normalized)
   ) {
     colorClass = 'bg-[#F05252]/15 text-[#F05252] border-[#F05252]/40';
-  } else if (['DISCONNECTED', 'OFFLINE', 'FALSE POSITIVE', 'ARCHIVED', 'CLOSED'].includes(normalized)) {
+  } else if (
+    [
+      'DISCONNECTED',
+      'OFFLINE',
+      'FALSE POSITIVE',
+      'ARCHIVED',
+      'CLOSED',
+      'NOT CONFIGURED / SKIPPED',
+      'NOT CONFIGURED',
+      'SKIPPED',
+    ].includes(normalized)
+  ) {
     colorClass = 'bg-[#737E8C]/15 text-[#A7B0BC] border-[#737E8C]/40';
   }
 
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium border whitespace-nowrap shrink-0 ${colorClass}`}
+      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-xs font-medium border whitespace-nowrap shrink-0 ${colorClass} ${className}`}
     >
-      {status}
+      <span>{status}</span>
+      {icon}
     </span>
   );
 };

@@ -251,31 +251,22 @@ export const LinkGuardPage: React.FC = () => {
                     <span className="text-xs font-semibold text-[#F5F7FA] whitespace-nowrap">
                       {src.provider}
                     </span>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="shrink-0">
                       {reportUrl ? (
                         <a
                           href={reportUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          title={`Click to open live ${src.provider} report`}
-                          className="focus:outline-none focus:ring-1 focus:ring-[#D6AE45] rounded cursor-pointer transition-transform active:scale-95"
+                          title={`Click to open live ${src.provider} report in new tab`}
+                          className="focus:outline-none focus:ring-1 focus:ring-[#D6AE45] rounded cursor-pointer transition-transform hover:scale-105 active:scale-95 inline-block"
                         >
-                          <StatusBadge status={src.status} />
+                          <StatusBadge
+                            status={src.status}
+                            icon={<ExternalLink className="w-3 h-3 opacity-80" />}
+                          />
                         </a>
                       ) : (
                         <StatusBadge status={src.status} />
-                      )}
-                      {reportUrl && (
-                        <a
-                          href={reportUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={`Open live ${src.provider} threat report in new tab`}
-                          className="inline-flex items-center gap-1 text-[11px] text-[#A7B0BC] hover:text-[#D6AE45] transition-colors px-1.5 py-0.5 rounded hover:bg-[#1B222B]"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span className="text-[11px]">Report</span>
-                        </a>
                       )}
                     </div>
                   </div>
