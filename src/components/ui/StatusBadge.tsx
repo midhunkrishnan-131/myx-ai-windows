@@ -16,6 +16,7 @@ export const StatusBadge: React.FC<{ status?: string | null }> = ({ status = '' 
       'APPROVED',
       'ACTIVE',
       'COMPLETED',
+      'CLEAN',
       'NO KNOWN THREAT DETECTED',
       'REVIEWER_APPROVED',
       'PARSED',

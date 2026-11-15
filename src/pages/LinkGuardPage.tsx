@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link2, Search, ShieldAlert, Info } from 'lucide-react';
+import { Link2, Search, ShieldAlert, Info, ExternalLink, RefreshCw } from 'lucide-react';
 import { analyzeUrlWithLinkGuardLexical } from '../utils/securityLogic';
 import { LinkGuardAnalysisResult } from '../types/assessment.types';
 import { Card } from '../components/ui/Card';
@@ -24,6 +24,19 @@ const SAMPLE_TEST_URLS = [
     url: 'https://portal.myx-defense-demo.org/documentation',
   },
 ];
+
+const getProviderReportUrl = (provider: string, hostname: string, normalizedUrl: string): string | null => {
+  if (provider.includes('VirusTotal')) {
+    return `https://www.virustotal.com/gui/domain/${encodeURIComponent(hostname)}`;
+  }
+  if (provider.includes('URLhaus')) {
+    return `https://urlhaus.abuse.ch/browse.php?search=${encodeURIComponent(hostname)}`;
+  }
+  if (provider.includes('Google Safe Browsing')) {
+    return `https://transparencyreport.google.com/safe-browsing/search?url=${encodeURIComponent(normalizedUrl)}`;
+  }
+  return null;
+};
 
 export const LinkGuardPage: React.FC = () => {
   const [urlInput, setUrlInput] = useState(
@@ -204,20 +217,48 @@ export const LinkGuardPage: React.FC = () => {
         <Card
           title="Threat-Intelligence Feed Enrichment"
           subtitle="Live multi-vendor threat intelligence & security vendor reputation telemetry"
+          headerAction={
+            <Button
+              size="sm"
+              variant="secondary"
+              isLoading={isLoading}
+              icon={<RefreshCw className="w-3.5 h-3.5" />}
+              onClick={() => executeAnalysis(urlInput)}
+            >
+              Re-scan Feeds
+            </Button>
+          }
         >
           <div className="space-y-3">
-            {result.threat_intel_sources.map((src) => (
-              <div
-                key={src.provider}
-                className="p-3 bg-[#101318] border border-[#29313B] rounded-lg space-y-1"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-[#F5F7FA]">{src.provider}</span>
-                  <StatusBadge status={src.status} />
+            {result.threat_intel_sources.map((src) => {
+              const reportUrl = getProviderReportUrl(src.provider, result.hostname, result.normalized_url);
+              return (
+                <div
+                  key={src.provider}
+                  className="p-3 bg-[#101318] border border-[#29313B] rounded-lg space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-[#F5F7FA]">{src.provider}</span>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={src.status} />
+                      {reportUrl && (
+                        <a
+                          href={reportUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`Open live ${src.provider} threat report`}
+                          className="inline-flex items-center gap-1 text-[11px] text-[#A7B0BC] hover:text-[#D6AE45] transition-colors px-1.5 py-0.5 rounded hover:bg-[#1B222B]"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Report</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-[#A7B0BC] leading-relaxed">{src.details}</p>
                 </div>
-                <p className="text-[11px] text-[#A7B0BC]">{src.details}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       </div>
