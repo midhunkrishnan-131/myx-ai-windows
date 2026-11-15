@@ -10,7 +10,8 @@ import { ExportMenu } from '../components/common/ExportMenu';
 
 export const ReportsRepositoryPage: React.FC = () => {
   const { reports } = useSystemStatus();
-  const displayReports = reports.length > 0 ? reports : INITIAL_REPORTS;
+  // Filter out static demo reports so real live assessment reports take priority
+  const realReports = reports.filter((r) => !r.id.startsWith('demo-') && !r.id.startsWith('rpt-2026-'));
 
   return (
     <div className="space-y-6">
@@ -33,8 +34,27 @@ export const ReportsRepositoryPage: React.FC = () => {
         </Link>
       </div>
 
-      <div className="space-y-4">
-        {displayReports.map((rpt) => (
+      {realReports.length === 0 ? (
+        <div className="py-16 px-6 text-center bg-[#101318] border border-[#29313B] rounded-xl space-y-4">
+          <div className="w-12 h-12 rounded-full bg-[#D6AE45]/15 text-[#D6AE45] flex items-center justify-center mx-auto">
+            <FileCheck2 className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-[#F5F7FA]">No Live Deliverable Reports Yet</h3>
+            <p className="text-xs text-[#A7B0BC] max-w-md mx-auto leading-relaxed">
+              Scan any live website URL or domain in the Website Assessment module. As soon as the assessment completes, a real, comprehensive security assessment report will be automatically generated and archived here with PDF/DOCX export.
+            </p>
+          </div>
+          <Link
+            to="/assessments/website"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#D6AE45] hover:bg-[#E7C66A] rounded-lg text-xs font-semibold text-[#080A0D] transition-colors"
+          >
+            Go to Website Assessment & Scan Link
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {realReports.map((rpt) => (
           <Card
             key={rpt.id}
             title={`${rpt.report_code} — ${rpt.title}`}
@@ -90,7 +110,8 @@ export const ReportsRepositoryPage: React.FC = () => {
             </div>
           </Card>
         ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

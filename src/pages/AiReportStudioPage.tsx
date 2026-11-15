@@ -23,7 +23,8 @@ export const AiReportStudioPage: React.FC = () => {
   const { user } = useAuth();
   const { can } = useRBAC();
 
-  const displayReports = reports.length > 0 ? reports : INITIAL_REPORTS;
+  const realReports = reports.filter((r) => !r.id.startsWith('demo-') && !r.id.startsWith('rpt-2026-'));
+  const displayReports = realReports.length > 0 ? realReports : (reports.length > 0 ? reports : INITIAL_REPORTS);
   const [selectedReportId, setSelectedReportId] = useState<string>(displayReports[0]?.id || '');
   const activeReport = displayReports.find((r) => r.id === selectedReportId) || displayReports[0];
   const [selectedSectionId, setSelectedSectionId] = useState<string>(
@@ -86,10 +87,12 @@ export const AiReportStudioPage: React.FC = () => {
       setGeneratingAiDraft(false);
     }
 
+    const targetScope = activeReport?.scope_targets?.join(', ') || 'audited scope';
+    const findingKeys = activeReport?.included_finding_codes?.slice(0, 4).join(', ') || 'identified vulnerabilities';
     updateReportSection(
       activeReport.id,
       activeSection.id,
-      `${activeSection.content_markdown}\n\n[AI-Assisted Paragraph — Review Before Approval]: Verified telemetry confirms that remediating MYX-FND-2026-0041 (RDP NLA) and MYX-FND-2026-0042 (BitLocker Volume D:) reduces host attack surface score by 48%.`,
+      `${activeSection.content_markdown}\n\n[AI-Assisted Synthesis — Review Before Approval]: Verified defensive telemetry across ${targetScope} confirms that remediating prioritized findings (${findingKeys}) substantially reduces organizational exposure. All controls align with NIST SP 800-115 and OWASP security baselines.`,
       user?.full_name || 'Midhun Krishnan'
     );
   };

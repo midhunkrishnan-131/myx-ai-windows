@@ -9,7 +9,30 @@ export const ExportMenu: React.FC<{
   status: string;
   dataPayload: unknown;
 }> = ({ reportCode, reportTitle, status, dataPayload }) => {
-  const triggerDownload = (format: 'json' | 'csv' | 'pdf' | 'docx') => {
+  const triggerDownload = async (format: 'json' | 'csv' | 'pdf' | 'docx') => {
+    if (format === 'pdf') {
+      const payloadId = (dataPayload as any)?.id || reportCode;
+      try {
+        const response = await fetch(`/api/v1/reports/${encodeURIComponent(payloadId)}/pdf`, {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${reportCode.toLowerCase()}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          return;
+        }
+      } catch {
+        // Fallback to text export below
+      }
+    }
+
     const watermark =
       status === 'APPROVED' ? 'APPROVED FINAL REPORT' : 'DRAFT — UNAPPROVED';
     let content = '';

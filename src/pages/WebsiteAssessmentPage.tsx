@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Globe,
   Play,
@@ -328,9 +329,31 @@ export const WebsiteAssessmentPage: React.FC = () => {
       )}
 
       {scanMessage && (
-        <div className="p-3.5 bg-[#38BDF8]/10 border border-[#38BDF8]/30 rounded-lg flex items-center gap-2.5 text-xs text-[#38BDF8]">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{scanMessage}</span>
+        <div className="p-4 bg-[#38BDF8]/10 border border-[#38BDF8]/30 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-[#38BDF8]">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-[#38BDF8]" />
+            <span className="font-medium text-[#F5F7FA]">{scanMessage}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link
+              to="/reports"
+              className="px-3 py-1.5 bg-[#D6AE45] hover:bg-[#E7C66A] text-[#080A0D] rounded-md font-semibold text-xs transition-colors"
+            >
+              View Report
+            </Link>
+            <Link
+              to="/findings"
+              className="px-3 py-1.5 bg-[#101318] hover:bg-[#1B222B] text-[#F5F7FA] border border-[#29313B] rounded-md font-medium text-xs transition-colors"
+            >
+              Inspect Findings
+            </Link>
+            <Link
+              to="/ai/analyst"
+              className="px-3 py-1.5 bg-[#101318] hover:bg-[#1B222B] text-[#38BDF8] border border-[#38BDF8]/30 rounded-md font-medium text-xs transition-colors"
+            >
+              AI Copilot
+            </Link>
+          </div>
         </div>
       )}
 
