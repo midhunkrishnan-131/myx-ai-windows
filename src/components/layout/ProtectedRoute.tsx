@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { UserRole } from '../../types/auth.types';
 import { useAuth } from '../../hooks/useAuth';
@@ -11,7 +11,13 @@ export const ProtectedRoute: React.FC<{
   children: React.ReactNode;
 }> = ({ allowedRoles, children }) => {
   const { user, switchRoleForDemo } = useAuth();
-  const currentRole: UserRole = user?.role || 'VIEWER';
+  const location = useLocation();
+
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  const currentRole: UserRole = user.role;
 
   if (!allowedRoles.includes(currentRole)) {
     return (
