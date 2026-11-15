@@ -42,6 +42,14 @@ export const NAVIGATION_CATALOG: NavCatalogItem[] = [
     readOnlyForViewer: true,
   },
   {
+    id: 18,
+    label: 'Wi-Fi Password Lab',
+    path: '/auditors/wifi-lab',
+    group: 'Assessments & Auditors',
+    allowedRoles: ['ADMIN', 'SECURITY_ANALYST', 'VIEWER'],
+    readOnlyForViewer: false,
+  },
+  {
     id: 5,
     label: 'Windows Security Auditor',
     path: '/auditors/windows',

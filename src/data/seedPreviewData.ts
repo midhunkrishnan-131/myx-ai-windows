@@ -686,15 +686,6 @@ export const INITIAL_RAG_DOCUMENTS: RagDocumentRecord[] = [
     chunk_count: 19,
     created_at: '2026-09-01T00:00:00Z',
   },
-  {
-    id: 'rag-doc-04',
-    title: 'MYX Defense Operations Lab — Enterprise Vulnerability SLA & Allowlist Policy',
-    source_type: 'ORG_POLICY',
-    source_reference: 'ORG-POL-SLA-2026-V2',
-    is_global_reference: false,
-    chunk_count: 11,
-    created_at: '2026-10-15T14:20:00Z',
-  },
 ];
 
 export const INITIAL_AI_CONVERSATIONS: AiConversationSession[] = [
@@ -710,7 +701,7 @@ export const INITIAL_AI_CONVERSATIONS: AiConversationSession[] = [
         id: 'msg-welcome-01',
         role: 'assistant',
         content:
-          'Welcome to the MYX AI Security Analyst Copilot. I am connected to live assessment telemetry, OWASP standards, and NIST hardening benchmarks. Enter any security question below, select a quick prompt, or run a Website Assessment to analyze live target findings.',
+          'Welcome to MYX-AI Security Analyst Copilot. Ask a security question, upload a document, or analyze an authorized security assessment.',
         model_tier: 'PRIMARY',
         model_name: 'gemini-3-flash-preview',
         latency_ms: 90,

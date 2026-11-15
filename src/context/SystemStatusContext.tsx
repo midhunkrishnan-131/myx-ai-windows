@@ -92,7 +92,12 @@ interface SystemStatusContextValue {
 
   aiSessions: AiConversationSession[];
   ragDocuments: RagDocumentRecord[];
-  sendAiAnalystPrompt: (sessionId: string, promptText: string, modelTier: 'FAST' | 'PRIMARY' | 'ADVANCED') => void;
+  sendAiAnalystPrompt: (
+    sessionId: string,
+    promptText: string,
+    modelTier: 'FAST' | 'PRIMARY' | 'ADVANCED',
+    mode?: 'BEGINNER' | 'TECHNICAL'
+  ) => void;
   clearAiSession: (sessionId: string) => void;
   ingestRagDocument: (title: string, sourceType: RagDocumentRecord['source_type'], reference: string) => void;
 
@@ -630,7 +635,8 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const sendAiAnalystPrompt = (
     sessionId: string,
     promptText: string,
-    modelTier: 'FAST' | 'PRIMARY' | 'ADVANCED'
+    modelTier: 'FAST' | 'PRIMARY' | 'ADVANCED',
+    mode: 'BEGINNER' | 'TECHNICAL' = 'BEGINNER'
   ) => {
     const modelMap = {
       FAST: 'gemini-3-flash-preview',
@@ -638,6 +644,7 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       ADVANCED: 'gemini-3-flash-preview',
     };
     const now = new Date().toISOString();
+    const isBeginner = mode === 'BEGINNER';
     setAiSessions((prev) => {
       const exists = prev.some((s) => s.id === sessionId);
       const sessionList = exists ? prev : [INITIAL_AI_CONVERSATIONS[0], ...prev];
@@ -666,13 +673,14 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
             {
               id: `msg-a-${Date.now() + 1}`,
               role: 'assistant',
-              content: `[Live Grounded Response via ${modelMap[modelTier]}] ${findingsNotice} and tenant-isolated pgvector RAG corpus, here is the defensive analysis for: "${promptText}"`,
+              content: `[Live Grounded Response — ${mode} Mode via ${modelMap[modelTier]}] ${findingsNotice} and tenant-isolated pgvector RAG corpus, here is the defensive analysis for: "${promptText}"`,
               model_tier: modelTier,
               model_name: modelMap[modelTier],
               latency_ms: 480,
               created_at: now,
               structured_response: {
                 verified_facts: [
+                  `Explanation Mode: ${mode}.`,
                   attachedCodes.length > 0
                     ? `Referenced active context findings: ${attachedCodes.join(', ')}.`
                     : 'Defensive query evaluated against NIST SP 800-53 and OWASP Secure Baseline controls.',
@@ -706,7 +714,7 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
     void apiClient
       .request<{ aiSessions?: AiConversationSession[] }>('/ai/analyst/message', {
         method: 'POST',
-        body: JSON.stringify({ sessionId, promptText, modelTier }),
+        body: JSON.stringify({ sessionId, promptText, modelTier, mode }),
       })
       .then((res) => {
         if (res.data?.aiSessions) {

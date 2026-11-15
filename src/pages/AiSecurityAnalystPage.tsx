@@ -31,6 +31,7 @@ export const AiSecurityAnalystPage: React.FC = () => {
     useSystemStatus();
 
   const [modelTier, setModelTier] = useState<GeminiModelTier>('PRIMARY');
+  const [explanationMode, setExplanationMode] = useState<'BEGINNER' | 'TECHNICAL'>('BEGINNER');
   const [promptInput, setPromptInput] = useState('');
   const [newDocTitle, setNewDocTitle] = useState('');
   const [newDocRef, setNewDocRef] = useState('ORG-BASELINE-2026');
@@ -47,15 +48,17 @@ export const AiSecurityAnalystPage: React.FC = () => {
 
   const quickPrompts = hasAttachedFindings
     ? [
-        `Prioritize findings: ${activeSession.attached_finding_codes.slice(0, 3).join(', ')}`,
-        `How do I remediate ${activeSession.attached_finding_codes[0]} safely?`,
+        `Explain this report in simple English`,
+        `Which issue should I fix first?`,
+        `How do I remediate ${activeSession.attached_finding_codes[0] || 'active findings'} safely?`,
         'Draft an executive risk summary for management',
-        `Generate defensive verification checklist for ${activeSession.attached_windows_hosts?.[0] || 'target'}`,
+        `Generate defensive verification checklist`,
       ]
     : [
+        'Hi, introduce yourself and how you can help me',
+        'What is SQL injection and how do developers fix it?',
         'How do I configure Strict-Transport-Security (HSTS)?',
         'What is a hardened Content-Security-Policy (CSP)?',
-        'Explain OWASP Top 10 web vulnerabilities and defenses',
         'Best practices for Windows 11 endpoint hardening',
         'What cipher suites should I allow for TLS 1.3?',
       ];
@@ -74,7 +77,7 @@ export const AiSecurityAnalystPage: React.FC = () => {
     setIsThinking(true);
 
     try {
-      sendAiAnalystPrompt(targetSessionId, text, modelTier);
+      sendAiAnalystPrompt(targetSessionId, text, modelTier, explanationMode);
       // Brief animated thinking pause to let Gemini synthesis complete
       await new Promise((resolve) => setTimeout(resolve, 800));
     } finally {
@@ -92,7 +95,7 @@ export const AiSecurityAnalystPage: React.FC = () => {
   const handleQuickPromptClick = (text: string) => {
     const targetSessionId = activeSession?.id || 'conv-general-01';
     setIsThinking(true);
-    sendAiAnalystPrompt(targetSessionId, text, modelTier);
+    sendAiAnalystPrompt(targetSessionId, text, modelTier, explanationMode);
     setTimeout(() => setIsThinking(false), 800);
   };
 
@@ -196,7 +199,35 @@ export const AiSecurityAnalystPage: React.FC = () => {
           }
           className="lg:col-span-2"
           headerAction={
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Beginner vs Technical Explanation Mode Selector */}
+              <div className="flex items-center p-0.5 bg-[#080A0D] border border-[#29313B] rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setExplanationMode('BEGINNER')}
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
+                    explanationMode === 'BEGINNER'
+                      ? 'bg-[#D6AE45] text-[#080A0D]'
+                      : 'text-[#A7B0BC] hover:text-[#F5F7FA]'
+                  }`}
+                  title="Beginner-Friendly: Simple English, real-world analogies, step-by-step guidance"
+                >
+                  Beginner-Friendly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExplanationMode('TECHNICAL')}
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
+                    explanationMode === 'TECHNICAL'
+                      ? 'bg-[#D6AE45] text-[#080A0D]'
+                      : 'text-[#A7B0BC] hover:text-[#F5F7FA]'
+                  }`}
+                  title="Technical: Standards, CVSS metrics, scripts, RFC references"
+                >
+                  Technical
+                </button>
+              </div>
+
               <select
                 aria-label="Select Gemini Model Routing Tier"
                 value={modelTier}
@@ -253,11 +284,12 @@ export const AiSecurityAnalystPage: React.FC = () => {
             <div className="space-y-4 max-h-[560px] overflow-y-auto pr-1">
               {(activeSession?.messages || []).length === 0 ? (
                 <div className="py-12 px-4 text-center text-xs text-[#A7B0BC] space-y-2 bg-[#101318]/50 border border-[#29313B] rounded-lg">
-                  <Bot className="w-8 h-8 text-[#D6AE45] mx-auto opacity-70" />
-                  <div className="font-semibold text-[#F5F7FA]">Ready to assist</div>
-                  <p className="max-w-md mx-auto">
-                    Ask any question about defensive security, posture remediation, OWASP standards,
-                    or click a suggested prompt above.
+                  <Bot className="w-8 h-8 text-[#D6AE45] mx-auto opacity-80" />
+                  <div className="font-semibold text-sm text-[#F5F7FA]">
+                    Welcome to MYX-AI Security Analyst Copilot
+                  </div>
+                  <p className="max-w-md mx-auto text-xs text-[#A7B0BC] leading-relaxed">
+                    Ask a security question, upload a document, or analyze an authorized security assessment.
                   </p>
                 </div>
               ) : (

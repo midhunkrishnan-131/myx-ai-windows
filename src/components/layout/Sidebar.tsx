@@ -31,6 +31,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   '/assessments/website': <Globe className="w-4 h-4 shrink-0" />,
   '/assessments/network': <Network className="w-4 h-4 shrink-0" />,
   '/auditors/wifi': <Wifi className="w-4 h-4 shrink-0" />,
+  '/auditors/wifi-lab': <KeyRound className="w-4 h-4 shrink-0" />,
   '/auditors/windows': <MonitorCheck className="w-4 h-4 shrink-0" />,
   '/intelligence/linkguard': <Link2 className="w-4 h-4 shrink-0" />,
   '/analyzers/ssl-tls': <Lock className="w-4 h-4 shrink-0" />,

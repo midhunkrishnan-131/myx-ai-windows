@@ -10,6 +10,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { WebsiteAssessmentPage } from './pages/WebsiteAssessmentPage';
 import { NetworkAssessmentPage } from './pages/NetworkAssessmentPage';
 import { WifiAuditorPage } from './pages/WifiAuditorPage';
+import { WifiPasswordLabPage } from './pages/WifiPasswordLabPage';
 import { WindowsAuditorPage } from './pages/WindowsAuditorPage';
 import { LinkGuardPage } from './pages/LinkGuardPage';
 import { SslTlsAnalyzerPage } from './pages/SslTlsAnalyzerPage';
@@ -76,6 +77,14 @@ export default function App() {
                       element={
                         <ProtectedRoute allowedRoles={['ADMIN', 'SECURITY_ANALYST', 'VIEWER']}>
                           <WifiAuditorPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/auditors/wifi-lab"
+                      element={
+                        <ProtectedRoute allowedRoles={['ADMIN', 'SECURITY_ANALYST', 'VIEWER']}>
+                          <WifiPasswordLabPage />
                         </ProtectedRoute>
                       }
                     />
