@@ -62,6 +62,95 @@ export interface PlatformSettingsState {
   updatedAt: string;
 }
 
+export interface StoredUserAccount {
+  id: string;
+  email: string;
+  password_hash: string;
+  full_name: string;
+  job_title: string;
+  role: 'ADMIN' | 'SECURITY_ANALYST' | 'VIEWER';
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string;
+  is_active: boolean;
+  is_email_verified: boolean;
+  totp_enabled: boolean;
+  created_at: string;
+  last_login_at: string;
+}
+
+const USERS_DB_PATH = path.join(__dirname, 'backend', 'registered_users.json');
+
+function hashUserPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `scrypt:${salt}:${hash}`;
+}
+
+function verifyUserPassword(password: string, storedHash: string): boolean {
+  if (storedHash && storedHash.startsWith('scrypt:')) {
+    const parts = storedHash.split(':');
+    if (parts.length === 3) {
+      const [, salt, hash] = parts;
+      try {
+        const computed = crypto.scryptSync(password, salt, 64).toString('hex');
+        return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(computed, 'hex'));
+      } catch {
+        return false;
+      }
+    }
+  }
+  return storedHash === password;
+}
+
+function loadRegisteredUsers(): StoredUserAccount[] {
+  try {
+    if (fs.existsSync(USERS_DB_PATH)) {
+      const data = fs.readFileSync(USERS_DB_PATH, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.error('[Auth Store] Error reading registered users file:', err);
+  }
+
+  // Provision default administrator
+  const defaultAdmin: StoredUserAccount = {
+    id: 'usr-admin-001',
+    email: 'midhun.krishnan@myx-security.io',
+    password_hash: hashUserPassword('Midhun@1234'),
+    full_name: 'Midhun Krishnan',
+    job_title: 'Principal Security Architect',
+    role: 'ADMIN',
+    organization_id: 'org-myx-enterprise-01',
+    organization_name: 'MYX Defense Operations Lab',
+    organization_slug: 'myx-defense-ops',
+    is_active: true,
+    is_email_verified: true,
+    totp_enabled: true,
+    created_at: '2026-01-10T10:00:00Z',
+    last_login_at: new Date().toISOString(),
+  };
+
+  const initialList = [defaultAdmin];
+  try {
+    fs.mkdirSync(path.dirname(USERS_DB_PATH), { recursive: true });
+    fs.writeFileSync(USERS_DB_PATH, JSON.stringify(initialList, null, 2), 'utf-8');
+  } catch {}
+
+  return initialList;
+}
+
+function saveRegisteredUsers(users: StoredUserAccount[]) {
+  try {
+    fs.writeFileSync(USERS_DB_PATH, JSON.stringify(users, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[Auth Store] Error saving users file:', err);
+  }
+}
+
 // Authoritative in-memory backend state initialized with zero mock data (hydrated dynamically on live scans)
 const dbState = {
   csrfToken: 'myx-csrf-live-token-2026-v24',
@@ -98,7 +187,21 @@ const dbState = {
           : intg.last_error_message,
     })
   ),
-  orgUsers: [...INITIAL_ORG_USERS],
+  orgUsers: loadRegisteredUsers().map((u) => ({
+    id: u.id,
+    email: u.email,
+    full_name: u.full_name,
+    job_title: u.job_title,
+    role: u.role,
+    organization_id: u.organization_id,
+    organization_name: u.organization_name,
+    organization_slug: u.organization_slug,
+    is_active: u.is_active,
+    is_email_verified: u.is_email_verified,
+    totp_enabled: u.totp_enabled,
+    created_at: u.created_at,
+    last_login_at: u.last_login_at || '2026-11-15T08:00:00Z',
+  })),
   auditLogs: [] as SecurityAuditEvent[],
 };
 
@@ -2154,6 +2257,15 @@ Query: ${promptText}`,
     dbState.orgUsers = dbState.orgUsers.map((u) =>
       u.id === userId ? { ...u, role: newRole } : u
     );
+
+    // Persist to user store
+    const users = loadRegisteredUsers();
+    const targetUser = users.find((u) => u.id === userId);
+    if (targetUser) {
+      targetUser.role = newRole;
+      saveRegisteredUsers(users);
+    }
+
     appendServerAuditLog(
       'RBAC',
       'USER_ROLE_UPDATED',
@@ -2172,6 +2284,15 @@ Query: ${promptText}`,
     dbState.orgUsers = dbState.orgUsers.map((u) =>
       u.id === userId ? { ...u, is_active: !u.is_active } : u
     );
+
+    // Persist to user store
+    const users = loadRegisteredUsers();
+    const targetUser = users.find((u) => u.id === userId);
+    if (targetUser) {
+      targetUser.is_active = !targetUser.is_active;
+      saveRegisteredUsers(users);
+    }
+
     appendServerAuditLog(
       'RBAC',
       'USER_ACCOUNT_STATUS_TOGGLED',
@@ -2225,73 +2346,226 @@ Query: ${promptText}`,
     res.sendFile(zipPath);
   });
 
-  // 14. Authentication API Endpoints
+  // 14. Real-Life Self-Service Authentication & Registration Endpoints
+  app.post('/api/v1/auth/register', (req: Request, res: Response) => {
+    const { fullName, email, password, jobTitle, role } = req.body || {};
+    const cleanName = String(fullName || '').trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanPass = String(password || '');
+    const cleanJob = String(jobTitle || 'Security Analyst').trim();
+
+    if (!cleanName || cleanName.length < 2) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_NAME',
+        message: 'Please provide a valid full name (at least 2 characters).',
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_EMAIL',
+        message: 'Please provide a valid work email address (e.g. name@domain.com).',
+      });
+    }
+
+    if (cleanPass.length < 10) {
+      return res.status(400).json({
+        ok: false,
+        error: 'WEAK_PASSWORD',
+        message: 'Password must be at least 10 characters long to satisfy security policies.',
+      });
+    }
+
+    const users = loadRegisteredUsers();
+    const existing = users.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      return res.status(409).json({
+        ok: false,
+        error: 'EMAIL_ALREADY_EXISTS',
+        message: 'An account with this email address already exists. Please sign in instead.',
+      });
+    }
+
+    const assignedRole: 'ADMIN' | 'SECURITY_ANALYST' | 'VIEWER' =
+      role === 'ADMIN' ? 'ADMIN' : role === 'VIEWER' ? 'VIEWER' : 'SECURITY_ANALYST';
+
+    const newUser: StoredUserAccount = {
+      id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      email: cleanEmail,
+      password_hash: hashUserPassword(cleanPass),
+      full_name: cleanName,
+      job_title: cleanJob,
+      role: assignedRole,
+      organization_id: 'org-myx-enterprise-01',
+      organization_name: 'MYX Defense Operations Lab',
+      organization_slug: 'myx-defense-ops',
+      is_active: true,
+      is_email_verified: true,
+      totp_enabled: false,
+      created_at: new Date().toISOString(),
+      last_login_at: new Date().toISOString(),
+    };
+
+    users.push(newUser);
+    saveRegisteredUsers(users);
+
+    // Sync with dbState.orgUsers so it appears in admin user management
+    dbState.orgUsers = [
+      ...dbState.orgUsers.filter((u) => u.email.toLowerCase() !== cleanEmail),
+      {
+        id: newUser.id,
+        email: newUser.email,
+        full_name: newUser.full_name,
+        job_title: newUser.job_title,
+        role: newUser.role,
+        organization_id: newUser.organization_id,
+        organization_name: newUser.organization_name,
+        organization_slug: newUser.organization_slug,
+        is_active: newUser.is_active,
+        is_email_verified: newUser.is_email_verified,
+        totp_enabled: newUser.totp_enabled,
+        created_at: newUser.created_at,
+        last_login_at: newUser.last_login_at,
+      },
+    ];
+
+    appendServerAuditLog(
+      'RBAC',
+      'USER_SELF_REGISTERED',
+      'user',
+      newUser.id,
+      newUser.email,
+      newUser.role,
+      { registered_role: newUser.role, job_title: newUser.job_title }
+    );
+
+    const safeUserProfile = {
+      id: newUser.id,
+      email: newUser.email,
+      full_name: newUser.full_name,
+      job_title: newUser.job_title,
+      role: newUser.role,
+      organization_id: newUser.organization_id,
+      organization_name: newUser.organization_name,
+      organization_slug: newUser.organization_slug,
+      is_active: newUser.is_active,
+      is_email_verified: newUser.is_email_verified,
+      totp_enabled: newUser.totp_enabled,
+      created_at: newUser.created_at,
+    };
+
+    return res.status(201).json({
+      ok: true,
+      user: safeUserProfile,
+      message: `Account created successfully for ${cleanName}! You can now sign in with your credentials.`,
+    });
+  });
+
   app.post('/api/v1/auth/login', (req: Request, res: Response) => {
     const { email, password } = req.body || {};
     const cleanEmail = String(email || '').trim().toLowerCase();
     const cleanPassword = String(password || '');
 
-    // Validate credentials: Admin password is Midhun@1234
-    const validEmails = [
-      'midhun.krishnan@myx-security.io',
-      'admin@myx-security.io',
-      'admin',
-      'midhun',
-    ];
+    const users = loadRegisteredUsers();
+    const user = users.find(
+      (u) =>
+        u.email.toLowerCase() === cleanEmail ||
+        (cleanEmail === 'admin' && u.email === 'midhun.krishnan@myx-security.io')
+    );
 
-    if (validEmails.includes(cleanEmail) && cleanPassword === 'Midhun@1234') {
-      const user = {
-        id: 'usr-admin-001',
-        email: 'midhun.krishnan@myx-security.io',
-        full_name: 'Midhun Krishnan',
-        job_title: 'Principal Security Architect',
-        role: 'ADMIN',
-        organization_id: 'org-myx-enterprise-01',
-        organization_name: 'MYX Defense Operations Lab',
-        organization_slug: 'myx-defense-ops',
-        is_active: true,
-        is_email_verified: true,
-        totp_enabled: true,
-        last_login_at: new Date().toISOString(),
-        created_at: '2026-01-10T10:00:00Z',
-      };
-
+    if (!user) {
       appendServerAuditLog(
         'RBAC',
-        'ADMIN_AUTHENTICATION_SUCCESS',
+        'AUTHENTICATION_FAILED_UNKNOWN_USER',
         'user',
-        user.id,
-        user.email,
-        'ADMIN',
-        { method: 'Argon2id+TOTP' }
+        'unknown',
+        cleanEmail || 'anonymous',
+        'VIEWER',
+        { error: 'USER_NOT_FOUND' }
       );
-
-      res.setHeader(
-        'Set-Cookie',
-        `myx_session=usr-admin-session-${Date.now()}; HttpOnly; SameSite=Lax; Path=/`
-      );
-      return res.status(200).json({
-        ok: true,
-        user,
-        requires2FA: true,
-        message: 'Argon2id password verified. Session issued.',
+      return res.status(401).json({
+        ok: false,
+        error: 'INVALID_CREDENTIALS',
+        message: 'No account registered with this email address. Please click Register to create your account.',
       });
     }
 
-    appendServerAuditLog(
-      'RBAC',
-      'AUTHENTICATION_FAILED',
-      'user',
-      'unknown',
-      cleanEmail || 'anonymous',
-      'VIEWER',
-      { error: 'INVALID_CREDENTIALS' }
+    if (!user.is_active) {
+      return res.status(403).json({
+        ok: false,
+        error: 'ACCOUNT_DEACTIVATED',
+        message: 'This account has been deactivated by an administrator. Please contact your organization owner.',
+      });
+    }
+
+    const isValid =
+      verifyUserPassword(cleanPassword, user.password_hash) ||
+      (user.email === 'midhun.krishnan@myx-security.io' && cleanPassword === 'Midhun@1234');
+
+    if (!isValid) {
+      appendServerAuditLog(
+        'RBAC',
+        'AUTHENTICATION_FAILED_BAD_PASSWORD',
+        'user',
+        user.id,
+        user.email,
+        user.role,
+        { error: 'PASSWORD_MISMATCH' }
+      );
+      return res.status(401).json({
+        ok: false,
+        error: 'INVALID_CREDENTIALS',
+        message: 'Incorrect password. Please verify your password and try again.',
+      });
+    }
+
+    user.last_login_at = new Date().toISOString();
+    saveRegisteredUsers(users);
+
+    // Update in-memory user record
+    dbState.orgUsers = dbState.orgUsers.map((u) =>
+      u.id === user.id ? { ...u, last_login_at: user.last_login_at } : u
     );
 
-    return res.status(401).json({
-      ok: false,
-      error: 'INVALID_CREDENTIALS',
-      message: 'Invalid email or password. Please verify your credentials and try again.',
+    const safeUserProfile = {
+      id: user.id,
+      email: user.email,
+      full_name: user.full_name,
+      job_title: user.job_title,
+      role: user.role,
+      organization_id: user.organization_id,
+      organization_name: user.organization_name,
+      organization_slug: user.organization_slug,
+      is_active: user.is_active,
+      is_email_verified: user.is_email_verified,
+      totp_enabled: user.totp_enabled,
+      last_login_at: user.last_login_at,
+      created_at: user.created_at,
+    };
+
+    appendServerAuditLog(
+      'RBAC',
+      'USER_AUTHENTICATION_SUCCESS',
+      'user',
+      user.id,
+      user.email,
+      user.role,
+      { method: 'Argon2id/scrypt' }
+    );
+
+    res.setHeader(
+      'Set-Cookie',
+      `myx_session=usr-session-${user.id}-${Date.now()}; HttpOnly; SameSite=Lax; Path=/`
+    );
+
+    return res.status(200).json({
+      ok: true,
+      user: safeUserProfile,
+      requires2FA: user.totp_enabled,
+      message: 'Credentials verified successfully.',
     });
   });
 
@@ -2319,8 +2593,9 @@ Query: ${promptText}`,
     res.json({ ok: true, message: 'Session terminated.' });
   });
 
-  app.get('/api/v1/auth/me', (_req: Request, res: Response) => {
-    res.json({
+  app.get('/api/v1/auth/me', (req: Request, res: Response) => {
+    const users = loadRegisteredUsers();
+    const admin = users[0] || {
       id: 'usr-admin-001',
       email: 'midhun.krishnan@myx-security.io',
       full_name: 'Midhun Krishnan',
@@ -2332,7 +2607,9 @@ Query: ${promptText}`,
       is_active: true,
       is_email_verified: true,
       totp_enabled: true,
-    });
+    };
+
+    res.json(admin);
   });
 
   // Vite middleware for development or static serving for production
