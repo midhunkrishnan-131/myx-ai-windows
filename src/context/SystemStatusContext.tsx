@@ -106,6 +106,7 @@ interface SystemStatusContextValue {
     actorEmail: string
   ) => ExternalImportRecord;
 
+  resetPlatformData: () => Promise<void>;
   integrations: IntegrationConfigRecord[];
   saveIntegrationSecret: (provider: IntegrationProviderCode, rawSecret: string, actorEmail: string) => void;
   testIntegrationConnection: (provider: IntegrationProviderCode) => { reachable: boolean; message: string };
@@ -220,22 +221,30 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }>('/bootstrap', { method: 'GET' });
 
       const d = res.data;
-      if (d.targets) setTargets(d.targets);
-      if (d.assessments) setAssessments(d.assessments);
+      if (Array.isArray(d.targets)) {
+        setTargets(d.targets.filter((t) => !t.id.startsWith('tgt-00')));
+      } else {
+        setTargets([]);
+      }
+      if (Array.isArray(d.assessments)) {
+        setAssessments(d.assessments.filter((a) => !a.id.startsWith('asm-win-2026-') && !a.id.startsWith('asm-web-2026-')));
+      } else {
+        setAssessments([]);
+      }
       if (d.windowsAgents) setWindowsAgents(d.windowsAgents);
       if (d.windowsInventoryByAgent) setWindowsInventoryByAgent(d.windowsInventoryByAgent);
       if (d.windowsPostureByAgent) setWindowsPostureByAgent(d.windowsPostureByAgent);
       if (d.windowsSockets) setWindowsSockets(d.windowsSockets);
       if (d.wifiNetworks) setWifiNetworks(d.wifiNetworks);
-      if (d.findings && d.findings.length > 0) {
-        setFindings(d.findings);
+      if (Array.isArray(d.findings)) {
+        setFindings(d.findings.filter((f) => !f.id.startsWith('fnd-00')));
       } else {
-        setFindings(INITIAL_FINDINGS);
+        setFindings([]);
       }
       if (d.aiSessions && d.aiSessions.length > 0) {
         setAiSessions(d.aiSessions);
       } else {
-        setAiSessions(INITIAL_AI_CONVERSATIONS);
+        setAiSessions([]);
       }
       if (d.ragDocuments && d.ragDocuments.length > 0) {
         setRagDocuments(d.ragDocuments);
@@ -481,6 +490,19 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Keep existing wifiNetworks
     }
     return wifiNetworks;
+  };
+
+  const resetPlatformData = async () => {
+    try {
+      await apiClient.request('/system/reset', { method: 'POST' });
+    } catch {
+      // Fallback
+    }
+    setTargets([]);
+    setAssessments([]);
+    setFindings([]);
+    setReports([]);
+    setAiSessions([]);
   };
 
   const updateFindingStatus = (findingId: string, newStatus: FindingStatus, actorEmail: string) => {
@@ -956,6 +978,7 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
         updateReportSection,
         approveReport,
         importExternalScannerFile,
+        resetPlatformData,
         integrations,
         saveIntegrationSecret,
         testIntegrationConnection,

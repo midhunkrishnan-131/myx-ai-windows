@@ -882,7 +882,7 @@ const dbState = {
   windowsPostureByAgent: {} as Record<string, WindowsPostureCheck[]>,
   windowsSockets: [] as WindowsListeningSocket[],
   wifiNetworks: collectLiveWindowsWifiNetworks(),
-  findings: [...INITIAL_FINDINGS] as VulnerabilityFinding[],
+  findings: [] as VulnerabilityFinding[],
   aiSessions: [...INITIAL_AI_CONVERSATIONS] as AiConversationSession[],
   ragDocuments: [...INITIAL_RAG_DOCUMENTS] as RagDocumentRecord[],
   reports: [] as SecurityReport[],
@@ -1127,6 +1127,33 @@ async function startServer() {
   });
 
   // 3. Settings & Theme Switcher Endpoint (C-04, H-05)
+  app.post('/api/v1/system/reset', requireAuth, requireRole(['ADMIN']), (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
+    dbState.targets = [];
+    dbState.assessments = [];
+    dbState.findings = [];
+    dbState.reports = [];
+    dbState.aiSessions = [];
+    appendServerAuditLog(
+      'ASSESSMENT',
+      'SYSTEM_DATA_CLEARED',
+      'system',
+      'clean-slate',
+      user?.email || 'admin@myx-security.io',
+      user?.role || 'ADMIN',
+      { reason: 'Administrator initiated clean slate reset' }
+    );
+    res.json({
+      ok: true,
+      message: 'All assessments, findings, reports, and targets have been successfully cleared.',
+      targets: [],
+      assessments: [],
+      findings: [],
+      reports: [],
+      aiSessions: [],
+    });
+  });
+
   app.get('/api/v1/settings', requireAuth, (_req: Request, res: Response) => {
     res.json(dbState.settings);
   });

@@ -15,6 +15,7 @@ import {
   Globe,
   Sparkles,
   Bot,
+  Trash2,
 } from 'lucide-react';
 import { useSystemStatus } from '../context/SystemStatusContext';
 import { BRAND_CONFIG } from '../config/brand.config';
@@ -33,9 +34,23 @@ interface AiPostureBriefing {
 }
 
 export const DashboardPage: React.FC = () => {
-  const { findings, assessments, windowsAgents, integrations, targets } = useSystemStatus();
+  const { findings, assessments, windowsAgents, integrations, targets, resetPlatformData } = useSystemStatus();
   const [aiBriefing, setAiBriefing] = useState<AiPostureBriefing | null>(null);
   const [loadingBriefing, setLoadingBriefing] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  const handleResetData = async () => {
+    if (!window.confirm('Are you sure you want to clear all assessment records, findings, targets, and reports to a clean slate?')) {
+      return;
+    }
+    setIsResetting(true);
+    try {
+      await resetPlatformData();
+      setAiBriefing(null);
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   const openFindings = findings.filter(
     (f) => f.status === 'Open' || f.status === 'In Progress' || f.status === 'Reopened'
@@ -129,6 +144,17 @@ export const DashboardPage: React.FC = () => {
             <Globe className="w-4 h-4" />
             <span>New Authorized Assessment</span>
           </Link>
+          {(findings.length > 0 || assessments.length > 0 || targets.length > 0) && (
+            <Button
+              variant="danger"
+              size="sm"
+              isLoading={isResetting}
+              onClick={handleResetData}
+              icon={<Trash2 className="w-3.5 h-3.5" />}
+            >
+              Clear All Data
+            </Button>
+          )}
         </div>
       </div>
 
@@ -351,7 +377,7 @@ export const DashboardPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#29313B] text-xs">
-                  {findings.slice(0, 4).map((f) => (
+                  {openFindings.slice(0, 4).map((f) => (
                     <tr key={f.id} className="hover:bg-[#1B222B] transition-colors">
                       <td className="py-3 px-4 font-mono text-[#38BDF8] whitespace-nowrap">
                         {f.finding_code}
