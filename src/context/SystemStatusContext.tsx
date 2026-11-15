@@ -73,6 +73,7 @@ interface SystemStatusContextValue {
   windowsPostureByAgent: Record<string, WindowsPostureCheck[]>;
   windowsSockets: WindowsListeningSocket[];
   wifiNetworks: WifiNetworkAuditEntry[];
+  scanWifiNetworks: () => Promise<WifiNetworkAuditEntry[]>;
   enrollWindowsAgent: (hostname: string, displayName: string, osEdition: string, actorEmail: string) => WindowsAgentRecord;
   revokeWindowsAgent: (agentId: string, actorEmail: string) => void;
 
@@ -462,6 +463,24 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
         body: JSON.stringify({ actorEmail }),
       })
       .catch(() => {});
+  };
+
+  const scanWifiNetworks = async (): Promise<WifiNetworkAuditEntry[]> => {
+    try {
+      const res = await apiClient.request<{
+        ok: boolean;
+        wifiNetworks: WifiNetworkAuditEntry[];
+      }>('/auditors/wifi/scan', {
+        method: 'POST',
+      });
+      if (res.data && Array.isArray(res.data.wifiNetworks)) {
+        setWifiNetworks(res.data.wifiNetworks);
+        return res.data.wifiNetworks;
+      }
+    } catch {
+      // Keep existing wifiNetworks
+    }
+    return wifiNetworks;
   };
 
   const updateFindingStatus = (findingId: string, newStatus: FindingStatus, actorEmail: string) => {
@@ -920,6 +939,7 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
         windowsPostureByAgent,
         windowsSockets,
         wifiNetworks,
+        scanWifiNetworks,
         enrollWindowsAgent,
         revokeWindowsAgent,
         findings,

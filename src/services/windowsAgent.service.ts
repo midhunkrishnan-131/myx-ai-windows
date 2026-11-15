@@ -51,4 +51,12 @@ export const windowsAgentService = {
       () => []
     );
   },
+
+  async scanWifiNetworks() {
+    return apiClient.request<{ ok: boolean; wifiNetworks: WifiNetworkAuditEntry[]; scannedAt: string }>(
+      '/auditors/wifi/scan',
+      { method: 'POST' },
+      () => ({ ok: true, wifiNetworks: [], scannedAt: new Date().toISOString() })
+    );
+  },
 };
