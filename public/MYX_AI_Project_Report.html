@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MYX AI (Windows Edition) — Executive Project Report</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    :root {
+      --bg-color: #080a0d;
+      --card-bg: #101318;
+      --border-color: #29313b;
+      --text-main: #f5f7fa;
+      --text-muted: #a7b0bc;
+      --gold: #d6ae45;
+      --green: #22c55e;
+      --red: #f05252;
+      --blue: #38bdf8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      line-height: 1.6;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .header {
+      border-bottom: 2px solid var(--gold);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+    }
+
+    .brand-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--gold);
+      letter-spacing: -0.5px;
+    }
+
+    .doc-subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-gold {
+      background: rgba(214, 174, 69, 0.15);
+      color: var(--gold);
+      border: 1px solid rgba(214, 174, 69, 0.4);
+    }
+
+    .badge-green {
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--green);
+      border: 1px solid rgba(34, 197, 94, 0.4);
+    }
+
+    .badge-red {
+      background: rgba(240, 82, 82, 0.15);
+      color: var(--red);
+      border: 1px solid rgba(240, 82, 82, 0.4);
+    }
+
+    .section {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+      page-break-inside: avoid;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-title::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 18px;
+      background: var(--gold);
+      border-radius: 2px;
+    }
+
+    p, li {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    ul {
+      padding-left: 20px;
+      margin-bottom: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 12.5px;
+    }
+
+    th, td {
+      border: 1px solid var(--border-color);
+      padding: 10px 14px;
+      text-align: left;
+    }
+
+    th {
+      background: rgba(214, 174, 69, 0.08);
+      color: var(--gold);
+      font-weight: 600;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #38bdf8;
+    }
+
+    .highlight-card {
+      background: #080a0d;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 14px;
+      margin: 12px 0;
+    }
+
+    .actions-bar {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    .btn-print {
+      background: var(--gold);
+      color: #080a0d;
+      font-weight: 600;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: opacity 0.2s;
+    }
+
+    .btn-print:hover {
+      opacity: 0.9;
+    }
+
+    @media print {
+      body {
+        background: #ffffff !important;
+        color: #111827 !important;
+        padding: 0;
+      }
+      .actions-bar {
+        display: none !important;
+      }
+      .section {
+        background: #ffffff !important;
+        border: 1px solid #e5e7eb !important;
+        color: #111827 !important;
+      }
+      p, li, td {
+        color: #374151 !important;
+      }
+      th {
+        background: #f3f4f6 !important;
+        color: #111827 !important;
+      }
+      code {
+        background: #f3f4f6 !important;
+        color: #1f2937 !important;
+      }
+      .brand-title {
+        color: #b45309 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="actions-bar">
+      <button class="btn-print" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="header">
+      <div>
+        <h1 class="brand-title">MYX AI (Windows Edition)</h1>
+        <div class="doc-subtitle">Autonomous Cyber Defense & Sovereign Threat Intelligence Platform</div>
+        <div class="doc-subtitle">Lead Architect: <strong>Midhun Krishnan</strong> | Platform Version: <strong>2.4.0-WIN Enterprise</strong></div>
+      </div>
+      <div>
+        <span class="badge badge-green">Production Ready</span>
+      </div>
+    </header>
+
+    <!-- SECTION 1 -->
+    <section class="section">
+      <h2 class="section-title">1. Executive Platform Architecture</h2>
+      <p>
+        MYX AI (Windows Edition) is designed from the ground up for high-assurance cybersecurity operations on Windows endpoints and hybrid clouds. It operates as a unified platform integrating perimeter attack surface management, endpoint posture telemetry, and grounded AI reasoning.
+      </p>
+      <div class="highlight-card">
+        <p><strong>Dual-Engine Architecture:</strong></p>
+        <ul>
+          <li><strong>Deterministic Security Engine:</strong> Performs raw TCP socket audits, RFC-compliant Punycode decoding, Outbound SSRF egress filtering, and VirusTotal v3 multi-vendor enrichment.</li>
+          <li><strong>Grounded AI Synthesis Engine:</strong> Multi-cloud LLM architecture leveraging Google Gemini and Groq Cloud with strict boundaries that cleanly separate verified technical facts from interpretive defensive guidance.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- SECTION 2 -->
+    <section class="section">
+      <h2 class="section-title">2. Real-Life Authentication & Access Control</h2>
+      <p>
+        All mock authentication has been replaced by a cryptographic authentication subsystem with persistent state management:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Specification</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Hash Algorithm</td>
+            <td><code>scrypt</code> (Node.js native <code>crypto.scryptSync</code>)</td>
+          </tr>
+          <tr>
+            <td>Salt Security</td>
+            <td>16-byte cryptographically secure pseudorandom salt per account</td>
+          </tr>
+          <tr>
+            <td>Persistent Store</td>
+            <td><code>backend/registered_users.json</code> (persistent across reboots)</td>
+          </tr>
+          <tr>
+            <td>Admin Username</td>
+            <td><code>midhun.krishnan@myx-security.io</code></td>
+          </tr>
+          <tr>
+            <td>Admin Password</td>
+            <td><code>Midhun@1234</code></td>
+          </tr>
+          <tr>
+            <td>Role Privileges</td>
+            <td><code>ADMIN</code> (Superuser access, policy overrides, audit stream access)</td>
+          </tr>
+          <tr>
+            <td>Route Protection</td>
+            <td>Unauthenticated route redirection to <code>/login</code>; TopBar profile session sign-out</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SECTION 3 -->
+    <section class="section">
+      <h2 class="section-title">3. Configured API Keys & How They Work</h2>
+      <p>
+        The platform utilizes five specialized API keys configured server-side in <code>backend/.env</code> and <code>.env</code> (fully protected in <code>.gitignore</code>):
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Environment Variable</th>
+            <th>Service</th>
+            <th>Role & Capabilities</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>VIRUSTOTAL_API_KEY</code></td>
+            <td>VirusTotal v3</td>
+            <td>Live multi-vendor telemetry across 92 security engines (Kaspersky, Defender, BitDefender, Sophos)</td>
+            <td><span class="badge badge-green">Active</span></td>
+          </tr>
+          <tr>
+            <td><code>GOOGLE_SAFE_BROWSING_API_KEY</code></td>
+            <td>Google Safe Browsing</td>
+            <td>Safe Browsing catalog telemetry and verified domain reputation lookup</td>
+            <td><span class="badge badge-green">Active</span></td>
+          </tr>
+          <tr>
+            <td><code>GEMINI_API_KEY</code></td>
+            <td>Google AI Studio</td>
+            <td>Primary LLM for interactive security chat, RAG, and finding synthesis (Gemini 3 Flash)</td>
+            <td><span class="badge badge-green">Active</span></td>
+          </tr>
+          <tr>
+            <td><code>GEMINI_API_KEY_2</code></td>
+            <td>Google AI Studio</td>
+            <td>Secondary automated failover key triggered when primary hits 429 quota limits</td>
+            <td><span class="badge badge-green">Active</span></td>
+          </tr>
+          <tr>
+            <td><code>GROQ_API_KEY</code></td>
+            <td>Groq Cloud Inference</td>
+            <td>Multi-cloud Tier 3 fallback on Groq LPU running <code>openai/gpt-oss-120b</code> at 500+ tok/s</td>
+            <td><span class="badge badge-green">Active</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SECTION 4 -->
+    <section class="section">
+      <h2 class="section-title">4. Multi-Cloud LLM Failover & Reasoning Engine</h2>
+      <p>
+        MYX AI implements an automated 3-Tier Zero-Downtime LLM Pipeline:
+      </p>
+      <div class="highlight-card">
+        <ul>
+          <li><strong>Tier 1 — Primary Gemini (Gemini 3 Flash):</strong> Sub-second responses for interactive security queries, vulnerability remediation, and lexical explanations.</li>
+          <li><strong>Tier 2 — Backup Gemini:</strong> If the primary key encounters rate limits (HTTP 429) or transient errors, requests automatically route to Key #2 with zero downtime.</li>
+          <li><strong>Tier 3 — Groq Cloud Failover:</strong> If Google Cloud experiences regional downtime, requests immediately bridge to Groq Cloud running <code>openai/gpt-oss-120b</code>.</li>
+          <li><strong>Tier 4 — Deterministic Synthesis:</strong> If all external cloud networks are offline, a rule-based deterministic security engine generates verified structured findings.</li>
+        </ul>
+      </div>
+      <p>
+        <strong>Hallucination Defense:</strong> The prompt architecture separates raw evidence (open ports, Punycode markers, threat engine counts) into a verifiable facts section before generating defensive remediation recommendations.
+      </p>
+    </section>
+
+    <!-- SECTION 5 -->
+    <section class="section">
+      <h2 class="section-title">5. Core Platform Features Currently Active</h2>
+      <ul>
+        <li><strong>LinkGuard AI:</strong> Analyzes URLs for phishing, Punycode homographs, dangerous file extensions (<code>.exe</code>, <code>.bat</code>), and SSRF private IP attempts with live VirusTotal 92-engine telemetry and clickable vendor reports.</li>
+        <li><strong>Website Assessment Scanner:</strong> Discovers open vulnerabilities, missing security headers (CSP, HSTS), open redirects, and insecure cookie configurations on authorized web targets.</li>
+        <li><strong>Network Discovery:</strong> Audits live TCP listening sockets across mission-critical ports (21, 22, 25, 80, 443, 445, 3389, 8080) with service banner grabbing.</li>
+        <li><strong>Windows Endpoint Agent:</strong> Lightweight Python agent auditing Windows Defender real-time protection, Firewall profiles, BitLocker encryption, active listening ports, and Wi-Fi security.</li>
+      </ul>
+    </section>
+
+    <!-- SECTION 6 -->
+    <section class="section">
+      <h2 class="section-title">6. Future Roadmap & Upcoming Capabilities</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Planned Capability</th>
+            <th>Target Timeline</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>v2.5.0</strong></td>
+            <td>Autonomous PowerShell remediation scripts generated on demand by the LLM.</td>
+            <td>Q1 2027</td>
+          </tr>
+          <tr>
+            <td><strong>v2.6.0</strong></td>
+            <td>Event Tracing for Windows (ETW) kernel event stream monitoring.</td>
+            <td>Q2 2027</td>
+          </tr>
+          <tr>
+            <td><strong>v2.7.0</strong></td>
+            <td>SIEM integration: Native Splunk HEC, Microsoft Sentinel, and Syslog connectors.</td>
+            <td>Q3 2027</td>
+          </tr>
+          <tr>
+            <td><strong>v2.8.0</strong></td>
+            <td>Air-Gapped Offline LLM Option: Embedded ONNX inference for offline defense networks.</td>
+            <td>Q4 2027</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>
