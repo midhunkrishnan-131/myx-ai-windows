@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Bot, Send, BookOpen, PlusCircle } from 'lucide-react';
 import { useSystemStatus } from '../context/SystemStatusContext';
 import { GeminiModelTier } from '../types/ai.types';
+import { INITIAL_AI_CONVERSATIONS } from '../data/seedPreviewData';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -22,12 +23,13 @@ export const AiSecurityAnalystPage: React.FC = () => {
   const [newDocTitle, setNewDocTitle] = useState('');
   const [newDocRef, setNewDocRef] = useState('ORG-BASELINE-2026');
 
-  const activeSession = aiSessions[0];
+  const activeSession = aiSessions[0] || INITIAL_AI_CONVERSATIONS[0];
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!promptInput.trim() || !activeSession) return;
-    sendAiAnalystPrompt(activeSession.id, promptInput.trim(), modelTier);
+    if (!promptInput.trim()) return;
+    const targetSessionId = activeSession?.id || 'conv-001';
+    sendAiAnalystPrompt(targetSessionId, promptInput.trim(), modelTier);
     setPromptInput('');
   };
 
@@ -57,7 +59,7 @@ export const AiSecurityAnalystPage: React.FC = () => {
         {/* Main Conversational Analyst Thread */}
         <Card
           title={activeSession?.title || 'AI Security Analyst Session'}
-          subtitle={`Attached Context: ${activeSession?.attached_finding_codes.join(', ')} · Host: ${activeSession?.attached_windows_hosts.join(', ')}`}
+          subtitle={`Attached Context: ${(activeSession?.attached_finding_codes || []).join(', ') || 'General Defensive Security'} · Host: ${(activeSession?.attached_windows_hosts || []).join(', ') || 'WIN11-SECOPS-01'}`}
           className="lg:col-span-2"
           headerAction={
             <select
@@ -79,7 +81,10 @@ export const AiSecurityAnalystPage: React.FC = () => {
                 <button
                   key={q}
                   type="button"
-                  onClick={() => sendAiAnalystPrompt(activeSession.id, q, modelTier)}
+                  onClick={() => {
+                    const targetSessionId = activeSession?.id || 'conv-001';
+                    sendAiAnalystPrompt(targetSessionId, q, modelTier);
+                  }}
                   className="px-2.5 py-1 rounded bg-[#101318] hover:bg-[#1B222B] border border-[#29313B] text-xs text-[#A7B0BC] hover:text-[#F5F7FA] transition-colors"
                 >
                   {q}
@@ -89,7 +94,7 @@ export const AiSecurityAnalystPage: React.FC = () => {
 
             {/* Messages */}
             <div className="space-y-4 max-h-[560px] overflow-y-auto pr-1">
-              {activeSession?.messages.map((msg) => (
+              {(activeSession?.messages || []).map((msg) => (
                 <div
                   key={msg.id}
                   className={`p-4 rounded-lg border text-xs space-y-3 ${

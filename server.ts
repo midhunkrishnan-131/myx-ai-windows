@@ -691,8 +691,8 @@ const dbState = {
   windowsSockets: [] as WindowsListeningSocket[],
   wifiNetworks: [] as WifiNetworkAuditEntry[],
   findings: [] as VulnerabilityFinding[],
-  aiSessions: [] as AiConversationSession[],
-  ragDocuments: [] as RagDocumentRecord[],
+  aiSessions: [...INITIAL_AI_CONVERSATIONS] as AiConversationSession[],
+  ragDocuments: [...INITIAL_RAG_DOCUMENTS] as RagDocumentRecord[],
   reports: [] as SecurityReport[],
   externalImports: [] as ExternalImportRecord[],
   integrations: INITIAL_INTEGRATIONS.map(
@@ -2831,8 +2831,25 @@ async function startServer() {
     const modelName = modelMap[modelTier] || 'gemini-3-flash-preview';
     const startMs = Date.now();
 
-    const session = dbState.aiSessions.find((s) => s.id === sessionId) || dbState.aiSessions[0];
-    const attachedCodes = session?.attached_finding_codes || ['MYX-FND-2026-0041'];
+    if (!dbState.aiSessions || dbState.aiSessions.length === 0) {
+      dbState.aiSessions = [...INITIAL_AI_CONVERSATIONS];
+    }
+    let session = dbState.aiSessions.find((s) => s.id === sessionId) || dbState.aiSessions[0];
+    if (!session) {
+      session = {
+        id: sessionId || 'conv-001',
+        title: 'Remediation Plan for WIN11-SECOPS-01 RDP & BitLocker Findings',
+        attached_finding_codes: ['MYX-FND-2026-0041', 'MYX-FND-2026-0042'],
+        attached_assessment_ids: ['asm-win-2026-02'],
+        attached_windows_hosts: ['WIN11-SECOPS-01'],
+        updated_at: new Date().toISOString(),
+        messages: [],
+      };
+      dbState.aiSessions.push(session);
+    }
+    const attachedCodes = (session.attached_finding_codes && session.attached_finding_codes.length > 0)
+      ? session.attached_finding_codes
+      : ['MYX-FND-2026-0041', 'MYX-FND-2026-0042'];
 
     let aiSummaryText = `[Live Backend Grounded Analysis via ${modelName}] Evaluated your defensive query ("${promptText}") against attached findings (${attachedCodes.join(', ')}) and tenant-isolated RAG references.`;
     let activeModelName = modelName;
@@ -2858,7 +2875,7 @@ Query: ${promptText}`,
     const now = new Date().toISOString();
 
     dbState.aiSessions = dbState.aiSessions.map((s) => {
-      if (s.id !== sessionId) return s;
+      if (s.id !== session.id) return s;
       return {
         ...s,
         updated_at: now,

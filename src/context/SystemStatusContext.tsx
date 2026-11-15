@@ -227,8 +227,16 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (d.windowsSockets) setWindowsSockets(d.windowsSockets);
       if (d.wifiNetworks) setWifiNetworks(d.wifiNetworks);
       if (d.findings) setFindings(d.findings);
-      if (d.aiSessions) setAiSessions(d.aiSessions);
-      if (d.ragDocuments) setRagDocuments(d.ragDocuments);
+      if (d.aiSessions && d.aiSessions.length > 0) {
+        setAiSessions(d.aiSessions);
+      } else {
+        setAiSessions(INITIAL_AI_CONVERSATIONS);
+      }
+      if (d.ragDocuments && d.ragDocuments.length > 0) {
+        setRagDocuments(d.ragDocuments);
+      } else {
+        setRagDocuments(INITIAL_RAG_DOCUMENTS);
+      }
       if (d.reports) setReports(d.reports);
       if (d.externalImports) setExternalImports(d.externalImports);
       if (d.integrations) setIntegrations(d.integrations);
