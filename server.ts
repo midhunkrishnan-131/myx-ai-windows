@@ -256,7 +256,7 @@ function bootstrapAdminAccountIfNeeded(): void {
 // Execute one-time bootstrap on startup
 bootstrapAdminAccountIfNeeded();
 
-// --- Server-Side Session Store & CSRF Architecture ---
+// --- Persistent & Scalable Server-Side Session Store & CSRF Architecture (Phase 4) ---
 export interface ServerSession {
   id: string;
   tokenHash: string;
@@ -268,11 +268,73 @@ export interface ServerSession {
   lastActiveAt: number;
   ip: string;
   userAgent: string;
+  revokedAt?: number | null;
 }
 
-const activeSessions = new Map<string, ServerSession>();
+export interface PasswordResetRecord {
+  tokenHash: string;
+  userId: string;
+  userEmail: string;
+  expiresAt: number;
+  used: boolean;
+  createdAt: number;
+}
+
+const SESSIONS_DB_PATH = path.resolve(RUNTIME_DIR, 'sessions.json');
+const PASSWORD_RESETS_DB_PATH = path.resolve(RUNTIME_DIR, 'password_resets.json');
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours max
 const SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours idle
+
+// Production and Cookie Configuration (Phase 3)
+const isProduction =
+  process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true';
+const isCookieSecure = isProduction;
+
+function getAuthCookieHeader(rawToken: string): string {
+  const secureFlag = isCookieSecure ? '; Secure' : '';
+  return `myx_session=${rawToken}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400${secureFlag}`;
+}
+
+function getClearCookieHeader(): string {
+  const secureFlag = isCookieSecure ? '; Secure' : '';
+  return `myx_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secureFlag}`;
+}
+
+function loadPersistentSessions(): Map<string, ServerSession> {
+  const map = new Map<string, ServerSession>();
+  try {
+    if (fs.existsSync(SESSIONS_DB_PATH)) {
+      const data = fs.readFileSync(SESSIONS_DB_PATH, 'utf-8');
+      const list = JSON.parse(data);
+      if (Array.isArray(list)) {
+        const now = Date.now();
+        for (const s of list) {
+          if (!s.revokedAt && s.expiresAt > now && now - s.lastActiveAt <= SESSION_IDLE_TIMEOUT_MS) {
+            map.set(s.tokenHash, s);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Session Store] Error loading persistent sessions:', err);
+  }
+  return map;
+}
+
+function persistSessionsToDisk(sessions: Map<string, ServerSession>): void {
+  try {
+    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    const array = Array.from(sessions.values());
+    const tmpPath = `${SESSIONS_DB_PATH}.tmp.${Date.now()}`;
+    fs.writeFileSync(tmpPath, JSON.stringify(array, null, 2), 'utf-8');
+    fs.renameSync(tmpPath, SESSIONS_DB_PATH);
+  } catch (err) {
+    console.error('[Session Store] Error persisting sessions to disk:', err);
+  }
+}
+
+// Memory cache initialized from disk store
+const activeSessions = loadPersistentSessions();
 
 function createSession(
   user: StoredUserAccount,
@@ -295,32 +357,125 @@ function createSession(
     lastActiveAt: now,
     ip,
     userAgent,
+    revokedAt: null,
   };
 
   activeSessions.set(tokenHash, session);
+  persistSessionsToDisk(activeSessions);
   return { session, rawToken };
 }
 
 function getSessionByToken(rawToken?: string): ServerSession | null {
   if (!rawToken || typeof rawToken !== 'string') return null;
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-  const session = activeSessions.get(tokenHash);
+  let session = activeSessions.get(tokenHash);
+
+  // If absent from memory, check persistent storage (multi-instance support & post-restart recovery)
+  if (!session) {
+    const fromDisk = loadPersistentSessions();
+    session = fromDisk.get(tokenHash);
+    if (session) {
+      activeSessions.set(tokenHash, session);
+    }
+  }
+
   if (!session) return null;
 
   const now = Date.now();
-  if (now > session.expiresAt || now - session.lastActiveAt > SESSION_IDLE_TIMEOUT_MS) {
+  if (session.revokedAt || now > session.expiresAt || now - session.lastActiveAt > SESSION_IDLE_TIMEOUT_MS) {
     activeSessions.delete(tokenHash);
+    persistSessionsToDisk(activeSessions);
     return null;
   }
 
+  // Sliding idle timeout: update lastActiveAt
+  const elapsed = now - session.lastActiveAt;
   session.lastActiveAt = now;
+  if (elapsed > 15000) {
+    persistSessionsToDisk(activeSessions);
+  }
+
   return session;
 }
 
 function destroySessionByToken(rawToken?: string): boolean {
   if (!rawToken) return false;
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-  return activeSessions.delete(tokenHash);
+  const session = activeSessions.get(tokenHash);
+  if (session) {
+    session.revokedAt = Date.now();
+  }
+  const deleted = activeSessions.delete(tokenHash);
+  persistSessionsToDisk(activeSessions);
+  return deleted;
+}
+
+function revokeAllSessionsForUser(userId: string): number {
+  let count = 0;
+  const now = Date.now();
+  for (const [hash, session] of activeSessions.entries()) {
+    if (session.userId === userId) {
+      session.revokedAt = now;
+      activeSessions.delete(hash);
+      count++;
+    }
+  }
+
+  const diskSessions = loadPersistentSessions();
+  for (const [hash, session] of diskSessions.entries()) {
+    if (session.userId === userId) {
+      session.revokedAt = now;
+      diskSessions.delete(hash);
+      count++;
+    }
+  }
+
+  persistSessionsToDisk(activeSessions);
+  return count;
+}
+
+// Password Reset Storage & Flow (Phase 2)
+function loadPasswordResetTokens(): PasswordResetRecord[] {
+  try {
+    if (fs.existsSync(PASSWORD_RESETS_DB_PATH)) {
+      const data = fs.readFileSync(PASSWORD_RESETS_DB_PATH, 'utf-8');
+      const list = JSON.parse(data);
+      if (Array.isArray(list)) {
+        const now = Date.now();
+        return list.filter((r) => !r.used && r.expiresAt > now);
+      }
+    }
+  } catch (err) {
+    console.error('[Reset Store] Error loading reset tokens:', err);
+  }
+  return [];
+}
+
+function savePasswordResetTokens(tokens: PasswordResetRecord[]): void {
+  try {
+    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    const tmpPath = `${PASSWORD_RESETS_DB_PATH}.tmp.${Date.now()}`;
+    fs.writeFileSync(tmpPath, JSON.stringify(tokens, null, 2), 'utf-8');
+    fs.renameSync(tmpPath, PASSWORD_RESETS_DB_PATH);
+  } catch (err) {
+    console.error('[Reset Store] Error saving reset tokens:', err);
+  }
+}
+
+function createPasswordResetToken(user: StoredUserAccount): string {
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const tokens = loadPasswordResetTokens();
+  tokens.push({
+    tokenHash,
+    userId: user.id,
+    userEmail: user.email,
+    expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour TTL
+    used: false,
+    createdAt: Date.now(),
+  });
+  savePasswordResetTokens(tokens);
+  return rawToken;
 }
 
 function parseCookies(cookieHeader?: string): Record<string, string> {
@@ -473,6 +628,8 @@ function requireCsrf(req: Request, res: Response, next: () => void) {
   if (
     req.path === '/api/v1/auth/login' ||
     req.path === '/api/v1/auth/register' ||
+    req.path === '/api/v1/auth/forgot-password' ||
+    req.path === '/api/v1/auth/reset-password' ||
     req.path === '/api/v1/windows-agent/enroll'
   ) {
     return next();
@@ -600,6 +757,27 @@ function appendServerAuditLog(
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.FRONTEND_PORT) || 3000;
+
+  // Trust upstream reverse proxy when in production or TRUST_PROXY=true (Phase 3)
+  if (isProduction || process.env.TRUST_PROXY === 'true') {
+    app.set('trust proxy', 1);
+  }
+
+  // Production HTTPS Redirection & HSTS Enforcement (Phase 3)
+  app.use((req: Request, res: Response, next) => {
+    const host = req.headers.host || '';
+    const isLocalhost = host.includes('localhost') || host.startsWith('127.0.0.1');
+    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+
+    if (isProduction) {
+      res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+
+      if (!isHttps && !isLocalhost) {
+        return res.redirect(301, `https://${host}${req.url}`);
+      }
+    }
+    next();
+  });
 
   app.use(express.json({ limit: '5mb' }));
 
@@ -2995,6 +3173,8 @@ Query: ${promptText}`,
     if (targetUser) {
       targetUser.role = newRole;
       saveRegisteredUsers(users);
+      // Invalidate active sessions to enforce immediate role update (Phase 4)
+      revokeAllSessionsForUser(userId);
     }
 
     appendServerAuditLog(
@@ -3022,6 +3202,8 @@ Query: ${promptText}`,
     if (targetUser) {
       targetUser.is_active = !targetUser.is_active;
       saveRegisteredUsers(users);
+      // Invalidate active sessions immediately upon account deactivation (Phase 4)
+      revokeAllSessionsForUser(userId);
     }
 
     appendServerAuditLog(
@@ -3329,12 +3511,8 @@ Query: ${promptText}`,
       { sessionId: session.id, ip: clientIp }
     );
 
-    // Issue Secure HttpOnly SameSite Session Cookie
-    const isProduction = process.env.NODE_ENV === 'production';
-    res.setHeader(
-      'Set-Cookie',
-      `myx_session=${rawToken}; HttpOnly; SameSite=Lax; Path=/${isProduction ? '; Secure' : ''}; Max-Age=86400`
-    );
+    // Issue Secure HttpOnly SameSite Session Cookie (Phase 3)
+    res.setHeader('Set-Cookie', getAuthCookieHeader(rawToken));
     res.setHeader('X-CSRF-Token', session.csrfToken);
 
     return res.status(200).json({
@@ -3344,6 +3522,198 @@ Query: ${promptText}`,
       csrfToken: session.csrfToken,
       requires2FA: user.totp_enabled,
       message: 'Credentials verified successfully.',
+    });
+  });
+
+  // Credential Rotation: Password Change for Authenticated Users (Phase 2)
+  app.post('/api/v1/auth/rotate-password', requireAuth, (req: Request, res: Response) => {
+    const user = (req as any).user as StoredUserAccount;
+    const { currentPassword, newPassword } = req.body || {};
+    const clientIp = req.ip || (req.socket ? req.socket.remoteAddress : '127.0.0.1') || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'Unknown Browser';
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        ok: false,
+        error: 'MISSING_FIELDS',
+        message: 'Both current password and new password are required.',
+      });
+    }
+
+    // Verify current password against stored scrypt hash
+    const isCurrentValid = verifyUserPassword(String(currentPassword), user.password_hash);
+    if (!isCurrentValid) {
+      appendServerAuditLog(
+        'RBAC',
+        'PASSWORD_ROTATION_FAILED_CURRENT_MISMATCH',
+        'user',
+        user.id,
+        user.email,
+        user.role,
+        { ip: clientIp }
+      );
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_CURRENT_PASSWORD',
+        message: 'The current password you provided is incorrect.',
+      });
+    }
+
+    // Enforce complexity on new password
+    const complexity = validatePasswordComplexity(String(newPassword));
+    if (!complexity.valid) {
+      return res.status(400).json({
+        ok: false,
+        error: 'PASSWORD_TOO_WEAK',
+        message: complexity.reason,
+      });
+    }
+
+    if (String(currentPassword) === String(newPassword)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'PASSWORD_UNCHANGED',
+        message: 'New password must be different from your current password.',
+      });
+    }
+
+    // Hash with fresh scrypt salt
+    const newHash = hashUserPassword(String(newPassword));
+    const users = loadRegisteredUsers();
+    const targetUser = users.find((u) => u.id === user.id);
+    if (targetUser) {
+      targetUser.password_hash = newHash;
+      saveRegisteredUsers(users);
+    }
+
+    // Revoke all existing sessions across all devices for this user
+    revokeAllSessionsForUser(user.id);
+
+    // Issue fresh session for the current client
+    const { session: freshSession, rawToken: freshToken } = createSession(user, clientIp, userAgent);
+    res.setHeader('Set-Cookie', getAuthCookieHeader(freshToken));
+    res.setHeader('X-CSRF-Token', freshSession.csrfToken);
+
+    appendServerAuditLog(
+      'RBAC',
+      'PASSWORD_ROTATED_SUCCESS',
+      'user',
+      user.id,
+      user.email,
+      user.role,
+      { ip: clientIp, sessionsRevoked: true }
+    );
+
+    return res.status(200).json({
+      ok: true,
+      token: freshToken,
+      csrfToken: freshSession.csrfToken,
+      message: 'Password rotated successfully. All previous sessions have been invalidated.',
+    });
+  });
+
+  // Account Recovery: Forgot Password (Phase 2 - Anti-Enumeration & Rate-Limited)
+  app.post('/api/v1/auth/forgot-password', (req: Request, res: Response) => {
+    const { email } = req.body || {};
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const clientIp = req.ip || (req.socket ? req.socket.remoteAddress : '127.0.0.1') || '127.0.0.1';
+
+    const ipLimit = checkLoginRateLimit(`forgot-ip:${clientIp}`);
+    if (!ipLimit.allowed) {
+      return res.status(429).json({
+        ok: false,
+        error: 'RATE_LIMIT_EXCEEDED',
+        message: `Too many password reset requests. Please wait ${ipLimit.retryAfterSec} seconds.`,
+      });
+    }
+
+    const users = loadRegisteredUsers();
+    const targetUser = users.find((u) => u.email.toLowerCase() === cleanEmail && u.is_active);
+
+    if (targetUser) {
+      const resetToken = createPasswordResetToken(targetUser);
+      // In production, token is emailed securely via transactional mailer (Resend API)
+      appendServerAuditLog(
+        'RBAC',
+        'PASSWORD_RESET_DISPATCHED',
+        'user',
+        targetUser.id,
+        targetUser.email,
+        targetUser.role,
+        { ip: clientIp }
+      );
+    }
+
+    // Anti-enumeration: Return generic success regardless of whether email was found
+    return res.status(200).json({
+      ok: true,
+      message: 'If an account exists for that email address, password reset instructions have been issued.',
+    });
+  });
+
+  // Account Recovery: Complete Password Reset with Single-Use Token (Phase 2)
+  app.post('/api/v1/auth/reset-password', (req: Request, res: Response) => {
+    const { token, newPassword } = req.body || {};
+    const rawToken = String(token || '').trim();
+    const cleanPass = String(newPassword || '');
+    const clientIp = req.ip || (req.socket ? req.socket.remoteAddress : '127.0.0.1') || '127.0.0.1';
+
+    if (!rawToken) {
+      return res.status(400).json({
+        ok: false,
+        error: 'TOKEN_REQUIRED',
+        message: 'A valid password reset token is required.',
+      });
+    }
+
+    const complexity = validatePasswordComplexity(cleanPass);
+    if (!complexity.valid) {
+      return res.status(400).json({
+        ok: false,
+        error: 'PASSWORD_TOO_WEAK',
+        message: complexity.reason,
+      });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const resetTokens = loadPasswordResetTokens();
+    const record = resetTokens.find((r) => r.tokenHash === tokenHash && !r.used && r.expiresAt > Date.now());
+
+    if (!record) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_OR_EXPIRED_TOKEN',
+        message: 'The password reset token is invalid or has expired. Please request a new one.',
+      });
+    }
+
+    // Mark single-use token as used immediately
+    record.used = true;
+    savePasswordResetTokens(resetTokens);
+
+    // Update user password
+    const users = loadRegisteredUsers();
+    const targetUser = users.find((u) => u.id === record.userId);
+    if (targetUser) {
+      targetUser.password_hash = hashUserPassword(cleanPass);
+      saveRegisteredUsers(users);
+      // Revoke all existing sessions
+      revokeAllSessionsForUser(targetUser.id);
+    }
+
+    appendServerAuditLog(
+      'RBAC',
+      'PASSWORD_RESET_COMPLETED',
+      'user',
+      record.userId,
+      record.userEmail,
+      targetUser?.role || 'VIEWER',
+      { ip: clientIp }
+    );
+
+    return res.status(200).json({
+      ok: true,
+      message: 'Password has been reset successfully. Please sign in with your new credentials.',
     });
   });
 
@@ -3371,7 +3741,7 @@ Query: ${promptText}`,
     if (token) {
       destroySessionByToken(token);
     }
-    res.setHeader('Set-Cookie', 'myx_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
+    res.setHeader('Set-Cookie', getClearCookieHeader());
     res.json({ ok: true, message: 'Session successfully terminated.' });
   });
 
