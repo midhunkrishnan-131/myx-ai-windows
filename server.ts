@@ -48,6 +48,7 @@ import {
 import { IntegrationConfigRecord } from './src/types/integrations.types';
 import { AuthorizedTarget, AssessmentRun } from './src/types/assessment.types';
 import { SecurityReport, ExternalImportRecord } from './src/types/reports.types';
+import { AiConversationSession, RagDocumentRecord } from './src/types/ai.types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,7 +62,7 @@ export interface PlatformSettingsState {
   updatedAt: string;
 }
 
-// Authoritative in-memory backend state initialized from normalized enterprise seed records
+// Authoritative in-memory backend state initialized with zero mock data (hydrated dynamically on live scans)
 const dbState = {
   csrfToken: 'myx-csrf-live-token-2026-v24',
   settings: {
@@ -72,18 +73,18 @@ const dbState = {
     maxConcurrentScans: 3,
     updatedAt: new Date().toISOString(),
   } as PlatformSettingsState,
-  targets: [...INITIAL_AUTHORIZED_TARGETS],
-  assessments: [...INITIAL_ASSESSMENT_RUNS],
-  windowsAgents: [...INITIAL_WINDOWS_AGENTS],
-  windowsInventoryByAgent: { ...INITIAL_WINDOWS_INVENTORY_BY_AGENT },
-  windowsPostureByAgent: { ...INITIAL_WINDOWS_POSTURE_BY_AGENT },
-  windowsSockets: [...INITIAL_WINDOWS_SOCKETS],
-  wifiNetworks: [...INITIAL_WIFI_NETWORKS],
-  findings: [...INITIAL_FINDINGS],
-  aiSessions: [...INITIAL_AI_CONVERSATIONS],
-  ragDocuments: [...INITIAL_RAG_DOCUMENTS],
-  reports: [...INITIAL_REPORTS],
-  externalImports: [...INITIAL_EXTERNAL_IMPORTS],
+  targets: [] as AuthorizedTarget[],
+  assessments: [] as AssessmentRun[],
+  windowsAgents: [] as WindowsAgentRecord[],
+  windowsInventoryByAgent: {} as Record<string, WindowsSystemInventory>,
+  windowsPostureByAgent: {} as Record<string, WindowsPostureCheck[]>,
+  windowsSockets: [] as WindowsListeningSocket[],
+  wifiNetworks: [] as WifiNetworkAuditEntry[],
+  findings: [] as VulnerabilityFinding[],
+  aiSessions: [] as AiConversationSession[],
+  ragDocuments: [] as RagDocumentRecord[],
+  reports: [] as SecurityReport[],
+  externalImports: [] as ExternalImportRecord[],
   integrations: INITIAL_INTEGRATIONS.map(
     (intg): IntegrationConfigRecord => ({
       ...intg,
@@ -1868,31 +1869,43 @@ Query: ${promptText}`,
     const highCount = openFindings.filter((f) => f.severity === 'High').length;
     const activeAgents = dbState.windowsAgents.filter((a) => a.status === 'ACTIVE').length;
 
-    let executiveSummary = `Across ${activeAgents} enrolled Windows 10/11 endpoints and ${dbState.targets.length} authorized targets, MYX AI identified ${critCount} Critical and ${highCount} High priority findings requiring immediate defensive hardening. Priority #1 is enforcing Network Level Authentication (NLA) on RDP listener port 3389 (MYX-FND-2026-0041) to eliminate pre-authentication lateral movement exposure.`;
+    let executiveSummary = openFindings.length === 0
+      ? `No active security vulnerabilities or enrolled endpoints detected. Enter a target website link in Website Assessment to run a real-time security assessment.`
+      : `Across ${activeAgents} enrolled Windows 10/11 endpoints and ${dbState.targets.length} authorized targets, MYX AI identified ${critCount} Critical and ${highCount} High priority findings requiring immediate defensive hardening.`;
 
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const geminiResp = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: `You are the CISO AI Copilot for MYX AI by Midhun Krishnan (Windows Edition). Write a 3-sentence executive security posture briefing for ${critCount} Critical and ${highCount} High open findings across ${activeAgents} Windows 10/11 endpoints, focusing on RDP NLA (MYX-FND-2026-0041), BitLocker volume encryption (MYX-FND-2026-0042), and web portal CSP hardening (MYX-FND-2026-0043).`,
-        });
-        if (geminiResp.text) {
-          executiveSummary = geminiResp.text;
+    if (openFindings.length > 0) {
+      const topTitle = openFindings[0].title;
+      const topCode = openFindings[0].finding_code;
+      executiveSummary = `Across ${activeAgents} enrolled Windows 10/11 endpoints and ${dbState.targets.length} authorized targets, MYX AI identified ${critCount} Critical and ${highCount} High priority findings requiring defensive hardening. Priority #1 is mitigating ${topTitle} (${topCode}).`;
+
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const geminiResp = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `You are the CISO AI Copilot for MYX AI by Midhun Krishnan (Windows Edition). Write a 3-sentence executive security posture briefing for ${critCount} Critical and ${highCount} High open findings across ${activeAgents} Windows 10/11 endpoints: ${openFindings.slice(0, 3).map((f) => f.title).join(', ')}.`,
+          });
+          if (geminiResp.text) {
+            executiveSummary = geminiResp.text;
+          }
+        } catch {
+          // Use deterministic grounded briefing
         }
-      } catch {
-        // Use deterministic grounded briefing
       }
     }
 
+    const priorities = openFindings.length === 0
+      ? [
+          'Scan an authorized website target in Website Assessment',
+          'Verify target domain DNS TXT or HTTP attestation token',
+          'Enroll Windows 10/11 endpoints using the read-only PowerShell auditor',
+        ]
+      : openFindings.slice(0, 3).map((f) => `${f.title} (${f.finding_code} · CVSS ${f.cvss_score?.toFixed(1) ?? 'N/A'})`);
+
     res.json({
       summary: executiveSummary,
-      topPriorities: [
-        'Enforce RDP Network Level Authentication (NLA) on WIN11-SECOPS-01 (MYX-FND-2026-0041 · CVSS 9.8)',
-        'Enable BitLocker XTS-AES-256 on Secondary Volume D: with TPM+PIN protector (MYX-FND-2026-0042 · CVSS 7.1)',
-        'Remove unsafe-inline/unsafe-eval from portal Content-Security-Policy (MYX-FND-2026-0043 · CVSS 7.4)',
-      ],
-      estimatedRiskReduction: '64%',
+      topPriorities: priorities,
+      estimatedRiskReduction: openFindings.length === 0 ? '0%' : '64%',
       model: 'gemini-3-flash-preview',
       latencyMs: Math.max(95, Date.now() - startMs),
       generatedAt: new Date().toISOString(),
@@ -1904,6 +1917,13 @@ Query: ${promptText}`,
     const startMs = Date.now();
     const finding =
       dbState.findings.find((f) => f.id === findingId) || dbState.findings[0];
+
+    if (!finding) {
+      return res.status(404).json({
+        error: 'FINDING_NOT_FOUND',
+        message: 'No active findings available. Run an assessment scan first to discover findings.',
+      });
+    }
 
     let explanation = `MYX AI Copilot analyzed ${finding.finding_code} (${finding.title}) on asset ${finding.affected_asset}. Applying the non-destructive hardening script below mitigates ${finding.cwe_id} while preserving service availability.`;
     let script = `# Review and test in a non-production environment before applying:\n# Target Finding: ${finding.finding_code} (${finding.title})\n${finding.remediation_guidance}`;

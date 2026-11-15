@@ -9,29 +9,30 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { CodeEvidenceBlock } from '../components/ui/CodeEvidenceBlock';
 
 export const DnsAnalyzerPage: React.FC = () => {
-  const [domain, setDomain] = useState('myx-defense-demo.org');
-  const [customSpf, setCustomSpf] = useState(
-    'v=spf1 include:_spf.google.com include:amazonses.com ~all'
-  );
-  const [customDmarc, setCustomDmarc] = useState(
-    'v=DMARC1; p=none; sp=quarantine; pct=100; rua=mailto:dmarc-reports@myx-defense-demo.org'
-  );
-  const [result, setResult] = useState<DnsAnalysisResult>(INITIAL_DNS_RESULT);
+  const [domain, setDomain] = useState('');
+  const [customSpf, setCustomSpf] = useState('');
+  const [customDmarc, setCustomDmarc] = useState('');
+  const [result, setResult] = useState<DnsAnalysisResult | null>(null);
 
   const handleAnalyze = (e: React.FormEvent) => {
     e.preventDefault();
-    const evaluated = evaluateSpfAndDmarcRecords([customSpf], [customDmarc]);
+    if (!domain.trim() && !customSpf.trim() && !customDmarc.trim()) return;
+    const evaluated = evaluateSpfAndDmarcRecords(
+      customSpf.trim() ? [customSpf.trim()] : ['v=spf1 -all'],
+      customDmarc.trim() ? [customDmarc.trim()] : ['v=DMARC1; p=reject']
+    );
     setResult({
       ...INITIAL_DNS_RESULT,
-      domain: domain.trim() || 'myx-defense-demo.org',
+      domain: domain.trim() || 'analyzed-domain.org',
       analyzed_at: new Date().toISOString(),
       records: {
         ...INITIAL_DNS_RESULT.records,
-        TXT: [customSpf, 'myx-site-verification=9f8e7d6c5b4a3210fedcba98'],
+        TXT: [customSpf.trim() || 'v=spf1 -all'],
       },
       spf: {
         ...INITIAL_DNS_RESULT.spf,
         ...evaluated.spf,
+        raw_record: customSpf.trim() || 'v=spf1 -all',
         explanation:
           evaluated.spf.all_qualifier === '-all'
             ? 'SPF record enforces strict -all (HardFail) within the 10-lookup RFC limit.'
@@ -40,6 +41,7 @@ export const DnsAnalyzerPage: React.FC = () => {
       dmarc: {
         ...INITIAL_DNS_RESULT.dmarc,
         ...evaluated.dmarc,
+        raw_record: customDmarc.trim() || 'v=DMARC1; p=reject',
         explanation:
           evaluated.dmarc.policy === 'reject' || evaluated.dmarc.policy === 'quarantine'
             ? `DMARC actively enforces p=${evaluated.dmarc.policy} against spoofed messages.`
@@ -114,80 +116,94 @@ export const DnsAnalyzerPage: React.FC = () => {
         </form>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card
-          title="SPF Policy Evaluation (RFC 7208)"
-          headerAction={<StatusBadge status={result.spf.status} />}
-        >
-          <div className="space-y-2 text-xs">
-            <div className="p-2.5 bg-[#080A0D] border border-[#29313B] rounded font-mono text-[#38BDF8] break-all">
-              {result.spf.raw_record || 'No SPF record found'}
-            </div>
-            <div className="flex justify-between text-[#A7B0BC]">
-              <span>DNS-Querying Mechanisms:</span>
-              <span className="font-mono text-[#F5F7FA] tabular-nums">
-                {result.spf.dns_lookup_count} / 10 max
-              </span>
-            </div>
-            <div className="flex justify-between text-[#A7B0BC]">
-              <span>All Qualifier:</span>
-              <span className="font-mono text-[#F5F7FA]">{result.spf.all_qualifier}</span>
-            </div>
-            <p className="text-[#A7B0BC] pt-1 leading-relaxed">{result.spf.explanation}</p>
+      {!result ? (
+        <Card title="DNS, SPF & DMARC Posture" subtitle="No domain evaluated yet">
+          <div className="py-12 px-4 text-center space-y-2">
+            <Server className="w-9 h-9 text-[#29313B] mx-auto mb-1" />
+            <div className="text-sm font-semibold text-[#F5F7FA]">No Domain Evaluated</div>
+            <p className="text-xs text-[#A7B0BC] max-w-sm mx-auto">
+              Enter a domain or SPF/DMARC TXT record above, then click &ldquo;Evaluate DNS &amp; Anti-Spoofing Controls&rdquo; to analyze security policies.
+            </p>
           </div>
         </Card>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Card
+              title="SPF Policy Evaluation (RFC 7208)"
+              headerAction={<StatusBadge status={result.spf.status} />}
+            >
+              <div className="space-y-2 text-xs">
+                <div className="p-2.5 bg-[#080A0D] border border-[#29313B] rounded font-mono text-[#38BDF8] break-all">
+                  {result.spf.raw_record || 'No SPF record found'}
+                </div>
+                <div className="flex justify-between text-[#A7B0BC]">
+                  <span>DNS-Querying Mechanisms:</span>
+                  <span className="font-mono text-[#F5F7FA] tabular-nums">
+                    {result.spf.dns_lookup_count} / 10 max
+                  </span>
+                </div>
+                <div className="flex justify-between text-[#A7B0BC]">
+                  <span>All Qualifier:</span>
+                  <span className="font-mono text-[#F5F7FA]">{result.spf.all_qualifier}</span>
+                </div>
+                <p className="text-[#A7B0BC] pt-1 leading-relaxed">{result.spf.explanation}</p>
+              </div>
+            </Card>
 
-        <Card
-          title="DMARC Policy Evaluation (RFC 7489)"
-          headerAction={<StatusBadge status={result.dmarc.status} />}
-        >
-          <div className="space-y-2 text-xs">
-            <div className="p-2.5 bg-[#080A0D] border border-[#29313B] rounded font-mono text-[#38BDF8] break-all">
-              {result.dmarc.raw_record || 'No _dmarc record found'}
-            </div>
-            <div className="flex justify-between text-[#A7B0BC]">
-              <span>Organizational Policy (p=):</span>
-              <span className="font-mono text-[#F5F7FA]">{result.dmarc.policy}</span>
-            </div>
-            <div className="flex justify-between text-[#A7B0BC]">
-              <span>Subdomain Policy (sp=):</span>
-              <span className="font-mono text-[#F5F7FA]">{result.dmarc.subdomain_policy || 'inherit'}</span>
-            </div>
-            <p className="text-[#A7B0BC] pt-1 leading-relaxed">{result.dmarc.explanation}</p>
+            <Card
+              title="DMARC Policy Evaluation (RFC 7489)"
+              headerAction={<StatusBadge status={result.dmarc.status} />}
+            >
+              <div className="space-y-2 text-xs">
+                <div className="p-2.5 bg-[#080A0D] border border-[#29313B] rounded font-mono text-[#38BDF8] break-all">
+                  {result.dmarc.raw_record || 'No _dmarc record found'}
+                </div>
+                <div className="flex justify-between text-[#A7B0BC]">
+                  <span>Organizational Policy (p=):</span>
+                  <span className="font-mono text-[#F5F7FA]">{result.dmarc.policy}</span>
+                </div>
+                <div className="flex justify-between text-[#A7B0BC]">
+                  <span>Subdomain Policy (sp=):</span>
+                  <span className="font-mono text-[#F5F7FA]">{result.dmarc.subdomain_policy || 'inherit'}</span>
+                </div>
+                <p className="text-[#A7B0BC] pt-1 leading-relaxed">{result.dmarc.explanation}</p>
+              </div>
+            </Card>
+
+            <Card
+              title="DNSSEC Signing Indicators"
+              headerAction={<StatusBadge status={result.dnssec.status} />}
+            >
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between text-[#A7B0BC]">
+                  <span>DNSKEY Record:</span>
+                  <span className="font-mono text-[#F5F7FA]">
+                    {result.dnssec.dnskey_present ? 'Present' : 'Absent'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[#A7B0BC]">
+                  <span>DS Delegation Signer:</span>
+                  <span className="font-mono text-[#F5F7FA]">
+                    {result.dnssec.ds_present ? 'Present' : 'Absent'}
+                  </span>
+                </div>
+                <p className="text-[#A7B0BC] pt-2 leading-relaxed">{result.dnssec.explanation}</p>
+              </div>
+            </Card>
           </div>
-        </Card>
 
-        <Card
-          title="DNSSEC Signing Indicators"
-          headerAction={<StatusBadge status={result.dnssec.status} />}
-        >
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between text-[#A7B0BC]">
-              <span>DNSKEY Record:</span>
-              <span className="font-mono text-[#F5F7FA]">
-                {result.dnssec.dnskey_present ? 'Present' : 'Absent'}
-              </span>
-            </div>
-            <div className="flex justify-between text-[#A7B0BC]">
-              <span>DS Delegation Signer:</span>
-              <span className="font-mono text-[#F5F7FA]">
-                {result.dnssec.ds_present ? 'Present' : 'Absent'}
-              </span>
-            </div>
-            <p className="text-[#A7B0BC] pt-2 leading-relaxed">{result.dnssec.explanation}</p>
-          </div>
-        </Card>
-      </div>
-
-      <CodeEvidenceBlock
-        title={`Authoritative DNS Records Snapshot — ${result.domain}`}
-        language="zone"
-        code={`A      ${result.records.A.join(', ')}
+          <CodeEvidenceBlock
+            title={`Authoritative DNS Records Snapshot — ${result.domain}`}
+            language="zone"
+            code={`A      ${result.records.A.join(', ')}
 AAAA   ${result.records.AAAA.join(', ')}
 MX     ${result.records.MX.map((m) => `${m.priority} ${m.exchange}`).join(' | ')}
 NS     ${result.records.NS.join(', ')}
 SOA    ${result.records.SOA || ''}`}
-      />
+          />
+        </>
+      )}
     </div>
   );
 };

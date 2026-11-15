@@ -16,7 +16,6 @@ import {
 import { useSystemStatus } from '../context/SystemStatusContext';
 import { useAuth } from '../hooks/useAuth';
 import { useRBAC } from '../hooks/useRBAC';
-import { INITIAL_NETWORK_PORT_RESULTS } from '../data/seedPreviewData';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { SeverityBadge } from '../components/ui/SeverityBadge';
@@ -57,9 +56,9 @@ export const NetworkAssessmentPage: React.FC = () => {
   const [customPorts, setCustomPorts] = useState('22, 80, 443, 445, 3389, 5985, 8443');
 
   // Results & Feedback state
-  const [portResults, setPortResults] = useState<NetworkPortResult[]>(INITIAL_NETWORK_PORT_RESULTS);
+  const [portResults, setPortResults] = useState<NetworkPortResult[]>([]);
   const [latestRun, setLatestRun] = useState<AssessmentRun | null>(null);
-  const [lastRunTimestamp, setLastRunTimestamp] = useState('2026-11-14T08:20:00Z');
+  const [lastRunTimestamp, setLastRunTimestamp] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -578,52 +577,62 @@ export const NetworkAssessmentPage: React.FC = () => {
         noPadding
       >
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-[#101318] border-b border-[#29313B] text-[11px] font-medium text-[#A7B0BC]">
-                <th className="py-3 px-4">Port / Proto</th>
-                <th className="py-3 px-4">Service</th>
-                <th className="py-3 px-4">State</th>
-                <th className="py-3 px-4">Historical Diff</th>
-                <th className="py-3 px-4">Observed Banner</th>
-                <th className="py-3 px-4">Risk Level</th>
-                <th className="py-3 px-4">Analyst Notes & Guidance</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#29313B] text-xs">
-              {portResults.map((item) => (
-                <tr key={item.port} className="hover:bg-[#1B222B]">
-                  <td className="py-3 px-4 font-mono font-semibold text-[#F5F7FA] tabular-nums">
-                    {item.port}/{item.protocol}
-                  </td>
-                  <td className="py-3 px-4 font-mono text-[#38BDF8]">{item.service_name}</td>
-                  <td className="py-3 px-4">
-                    <StatusBadge status={item.state.toUpperCase()} />
-                  </td>
-                  <td className="py-3 px-4 font-mono">
-                    {item.change_since_last_scan === 'newly_opened' ? (
-                      <span className="text-[#F05252] font-semibold bg-[#F05252]/10 px-2 py-0.5 rounded border border-[#F05252]/20">
-                        + NEWLY OPENED
-                      </span>
-                    ) : item.change_since_last_scan === 'newly_closed' ? (
-                      <span className="text-[#22C55E] font-semibold bg-[#22C55E]/10 px-2 py-0.5 rounded border border-[#22C55E]/20">
-                        - NEWLY CLOSED
-                      </span>
-                    ) : (
-                      <span className="text-[#737E8C]">UNCHANGED</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 font-mono text-[#A7B0BC]">
-                    {item.banner || '—'}
-                  </td>
-                  <td className="py-3 px-4">
-                    <SeverityBadge severity={item.risk_level} />
-                  </td>
-                  <td className="py-3 px-4 text-[#A7B0BC] max-w-xs">{item.notes}</td>
+          {portResults.length === 0 ? (
+            <div className="py-12 px-4 text-center space-y-2">
+              <Network className="w-9 h-9 text-[#29313B] mx-auto mb-1" />
+              <div className="text-sm font-semibold text-[#F5F7FA]">No Open Ports Discovered Yet</div>
+              <p className="text-xs text-[#A7B0BC] max-w-sm mx-auto">
+                Enter a target host or domain above and click &ldquo;Execute Live Network Scan&rdquo; to probe network ports.
+              </p>
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[#101318] border-b border-[#29313B] text-[11px] font-medium text-[#A7B0BC]">
+                  <th className="py-3 px-4">Port / Proto</th>
+                  <th className="py-3 px-4">Service</th>
+                  <th className="py-3 px-4">State</th>
+                  <th className="py-3 px-4">Historical Diff</th>
+                  <th className="py-3 px-4">Observed Banner</th>
+                  <th className="py-3 px-4">Risk Level</th>
+                  <th className="py-3 px-4">Analyst Notes & Guidance</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-[#29313B] text-xs">
+                {portResults.map((item) => (
+                  <tr key={item.port} className="hover:bg-[#1B222B]">
+                    <td className="py-3 px-4 font-mono font-semibold text-[#F5F7FA] tabular-nums">
+                      {item.port}/{item.protocol}
+                    </td>
+                    <td className="py-3 px-4 font-mono text-[#38BDF8]">{item.service_name}</td>
+                    <td className="py-3 px-4">
+                      <StatusBadge status={item.state.toUpperCase()} />
+                    </td>
+                    <td className="py-3 px-4 font-mono">
+                      {item.change_since_last_scan === 'newly_opened' ? (
+                        <span className="text-[#F05252] font-semibold bg-[#F05252]/10 px-2 py-0.5 rounded border border-[#F05252]/20">
+                          + NEWLY OPENED
+                        </span>
+                      ) : item.change_since_last_scan === 'newly_closed' ? (
+                        <span className="text-[#22C55E] font-semibold bg-[#22C55E]/10 px-2 py-0.5 rounded border border-[#22C55E]/20">
+                          - NEWLY CLOSED
+                        </span>
+                      ) : (
+                        <span className="text-[#737E8C]">UNCHANGED</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 font-mono text-[#A7B0BC]">
+                      {item.banner || '—'}
+                    </td>
+                    <td className="py-3 px-4">
+                      <SeverityBadge severity={item.risk_level} />
+                    </td>
+                    <td className="py-3 px-4 text-[#A7B0BC] max-w-xs">{item.notes}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </Card>
     </div>

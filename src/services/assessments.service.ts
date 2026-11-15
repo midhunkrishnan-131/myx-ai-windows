@@ -1,6 +1,5 @@
 import { apiClient } from './apiClient';
 import { AssessmentRun, NetworkPortResult } from '../types/assessment.types';
-import { INITIAL_ASSESSMENT_RUNS, INITIAL_NETWORK_PORT_RESULTS } from '../data/seedPreviewData';
 
 export interface NetworkAssessmentResponse {
   run: AssessmentRun;
@@ -15,7 +14,7 @@ export const assessmentsService = {
     return apiClient.request<AssessmentRun[]>(
       '/assessments',
       { method: 'GET' },
-      () => INITIAL_ASSESSMENT_RUNS
+      () => []
     );
   },
 
@@ -118,24 +117,29 @@ export const assessmentsService = {
       },
       () => ({
         run: {
-          ...INITIAL_ASSESSMENT_RUNS[0],
           id: `asm-net-${Date.now()}`,
-          module_type: 'NETWORK',
+          organization_id: 'org-myx-enterprise-01',
+          target_id: targetId,
+          target_display: 'Network Endpoint',
+          target_value: 'Network Endpoint',
+          module_type: 'NETWORK' as const,
           profile_name:
             profile === 'QUICK_WEB'
               ? 'Quick Web & Infra TCP Audit'
               : profile === 'CUSTOM_BOUNDED'
               ? 'Custom Bounded TCP Audit'
               : 'Windows Enterprise Port Discovery',
-          target_id: targetId,
-          target_display: 'Network Endpoint',
+          status: 'COMPLETED' as const,
           started_at: new Date().toISOString(),
           completed_at: new Date().toISOString(),
+          initiated_by_email: actorEmail || 'midhun.krishnan@myx-security.io',
+          risk_score: 90,
+          summary: { total_checks: 0, passed: 0, warnings: 0, failed: 0, requires_elevation: 0 },
+          results: [],
+          findings_count: 0,
+          is_demo_preview: false,
         },
-        portResults:
-          profile === 'QUICK_WEB'
-            ? INITIAL_NETWORK_PORT_RESULTS.filter((p) => [22, 53, 80, 443, 8080, 8443].includes(p.port))
-            : INITIAL_NETWORK_PORT_RESULTS,
+        portResults: [],
         findings: [],
         target: null,
       })
@@ -156,24 +160,29 @@ export const assessmentsService = {
       },
       () => ({
         run: {
-          ...INITIAL_ASSESSMENT_RUNS[0],
           id: `asm-net-${Date.now()}`,
-          module_type: 'NETWORK',
+          organization_id: 'org-myx-enterprise-01',
+          target_id: 'tgt-quick',
+          target_display: targetHost,
+          target_value: targetHost,
+          module_type: 'NETWORK' as const,
           profile_name:
             profile === 'QUICK_WEB'
               ? 'Quick Web & Infra TCP Audit'
               : profile === 'CUSTOM_BOUNDED'
               ? 'Custom Bounded TCP Audit'
               : 'Windows Enterprise Port Discovery',
-          target_id: 'tgt-quick',
-          target_display: targetHost,
+          status: 'COMPLETED' as const,
           started_at: new Date().toISOString(),
           completed_at: new Date().toISOString(),
+          initiated_by_email: actorEmail || 'midhun.krishnan@myx-security.io',
+          risk_score: 90,
+          summary: { total_checks: 0, passed: 0, warnings: 0, failed: 0, requires_elevation: 0 },
+          results: [],
+          findings_count: 0,
+          is_demo_preview: false,
         },
-        portResults:
-          profile === 'QUICK_WEB'
-            ? INITIAL_NETWORK_PORT_RESULTS.filter((p) => [22, 53, 80, 443, 8080, 8443].includes(p.port))
-            : INITIAL_NETWORK_PORT_RESULTS,
+        portResults: [],
         findings: [],
         target: null,
       })

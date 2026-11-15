@@ -51,7 +51,7 @@ def init_database_and_seeds():
         if not admin_user:
             admin_user = User(
                 email=admin_email,
-                password_hash=hash_password_argon2id("MyxDefense#2026!StrongPass"),
+                password_hash=hash_password_argon2id("Midhun@1234"),
                 full_name="Midhun Krishnan",
                 job_title="Principal Security Architect",
                 is_active=True,
@@ -59,8 +59,16 @@ def init_database_and_seeds():
             )
             db.add(admin_user)
             db.flush()
+        else:
+            admin_user.password_hash = hash_password_argon2id("Midhun@1234")
+            db.commit()
 
-            # Membership
+        # 4. Membership
+        existing_membership = db.query(OrganizationMembership).filter(
+            OrganizationMembership.organization_id == org.id,
+            OrganizationMembership.user_id == admin_user.id
+        ).first()
+        if not existing_membership:
             membership = OrganizationMembership(
                 organization_id=org.id,
                 user_id=admin_user.id,

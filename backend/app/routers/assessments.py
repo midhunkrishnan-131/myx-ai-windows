@@ -28,43 +28,8 @@ from app.models.domain_models import Assessment, AssessmentResult, new_uuid
 
 router = APIRouter(prefix="/api/v1/assessments", tags=["Assessments"])
 
-# In-memory target store for active session
-IN_MEMORY_TARGETS: List[Dict[str, Any]] = [
-    {
-        "id": "tgt-001",
-        "organization_id": "org-myx-enterprise-01",
-        "target_type": "URL",
-        "target_value": "https://portal.myx-defense-demo.org",
-        "display_name": "MYX Customer Security Portal (Production)",
-        "environment": "PRODUCTION",
-        "verification_status": "VERIFIED",
-        "verification_method": "DNS_TXT",
-        "verification_token": "myx-site-verification=9f8e7d6c5b4a3210fedcba98",
-        "verified_at": "2026-10-05T12:00:00Z",
-        "expires_at": "2027-10-05T12:00:00Z",
-        "allowlisted": True,
-        "attestation_notes": "Verified via DNS TXT record on root zone.",
-        "created_by_email": "midhun.krishnan@myx-security.io",
-        "created_at": "2026-10-05T12:00:00Z",
-    },
-    {
-        "id": "tgt-demo-enterprise-01",
-        "organization_id": "org-myx-enterprise-01",
-        "target_type": "DOMAIN",
-        "target_value": "portal.myx-defense-demo.org",
-        "display_name": "portal.myx-defense-demo.org",
-        "environment": "STAGING",
-        "verification_status": "VERIFIED",
-        "verification_method": "DNS_TXT",
-        "verification_token": "myx-token-verified-baseline",
-        "verified_at": "2026-03-01T00:00:00.000Z",
-        "expires_at": None,
-        "allowlisted": True,
-        "attestation_notes": "Sample baseline staging target for demonstration.",
-        "created_by_email": "midhun.krishnan@myx-security.io",
-        "created_at": "2026-03-01T00:00:00.000Z",
-    }
-]
+# In-memory target store for active session (starts empty, populated upon authorized target enrollment or scan)
+IN_MEMORY_TARGETS: List[Dict[str, Any]] = []
 
 IN_MEMORY_ASSESSMENTS: List[Dict[str, Any]] = []
 IN_MEMORY_FINDINGS: List[Dict[str, Any]] = []

@@ -18,8 +18,8 @@ COMMON_BREACHED_PASSWORDS = {
 
 
 def validate_password_strength(password: str) -> tuple[bool, str | None]:
-    if len(password) < 12:
-        return False, "Password must be at least 12 characters long."
+    if len(password) < 10:
+        return False, "Password must be at least 10 characters long."
     if password.lower() in COMMON_BREACHED_PASSWORDS:
         return False, "Password appears in known breached credential lists."
     return True, None

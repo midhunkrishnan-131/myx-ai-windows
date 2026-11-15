@@ -1,13 +1,12 @@
 import { apiClient } from './apiClient';
 import { WifiNetworkAuditEntry, WindowsAgentRecord } from '../types/windows.types';
-import { INITIAL_WIFI_NETWORKS, INITIAL_WINDOWS_AGENTS } from '../data/seedPreviewData';
 
 export const windowsAgentService = {
   async listAgents() {
     return apiClient.request<WindowsAgentRecord[]>(
       '/windows/agents',
       { method: 'GET' },
-      () => INITIAL_WINDOWS_AGENTS
+      () => []
     );
   },
 
@@ -49,7 +48,7 @@ export const windowsAgentService = {
     return apiClient.request<WifiNetworkAuditEntry[]>(
       '/auditors/wifi/runs',
       { method: 'GET' },
-      () => INITIAL_WIFI_NETWORKS
+      () => []
     );
   },
 };

@@ -53,8 +53,8 @@ export const AccountSecurityPage: React.FC = () => {
 
   const handleChangePassword = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPassword.length < 12) {
-      setPasswordSavedMessage('Error: Password must be at least 12 characters for Argon2id policy.');
+    if (newPassword.length < 10) {
+      setPasswordSavedMessage('Error: Password must be at least 10 characters.');
       return;
     }
     setCurrentPassword('');

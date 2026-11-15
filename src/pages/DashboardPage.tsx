@@ -62,13 +62,17 @@ export const DashboardPage: React.FC = () => {
         '/ai/posture-briefing',
         { method: 'POST' },
         () => ({
-          summary: `Across ${activeWindowsAgents.length} enrolled Windows 10/11 endpoints and ${targets.length} authorized targets, MYX AI identified ${criticalCount} Critical and ${highCount} High priority findings requiring immediate defensive hardening. Priority #1 is enforcing Network Level Authentication (NLA) on RDP listener port 3389 (MYX-FND-2026-0041) to eliminate pre-authentication lateral movement exposure.`,
-          topPriorities: [
-            'Enforce RDP Network Level Authentication (NLA) on WIN11-SECOPS-01 (MYX-FND-2026-0041 · CVSS 9.8)',
-            'Enable BitLocker XTS-AES-256 on Secondary Volume D: with TPM+PIN protector (MYX-FND-2026-0042 · CVSS 7.1)',
-            'Remove unsafe-inline/unsafe-eval from portal Content-Security-Policy (MYX-FND-2026-0043 · CVSS 7.4)',
-          ],
-          estimatedRiskReduction: '64%',
+          summary: openFindings.length === 0
+            ? 'No active security vulnerabilities or enrolled endpoints detected. Enter a target website link in Website Assessment to run a real-time security assessment.'
+            : `Across ${activeWindowsAgents.length} enrolled Windows 10/11 endpoints and ${targets.length} authorized targets, MYX AI identified ${criticalCount} Critical and ${highCount} High priority findings requiring defensive hardening. Priority #1 is mitigating ${openFindings[0].title} (${openFindings[0].finding_code}).`,
+          topPriorities: openFindings.length === 0
+            ? [
+                'Scan an authorized website target in Website Assessment',
+                'Verify target domain DNS TXT or HTTP attestation token',
+                'Enroll Windows 10/11 endpoints using the read-only PowerShell auditor',
+              ]
+            : openFindings.slice(0, 3).map((f) => `${f.title} (${f.finding_code} · CVSS ${f.cvss_score?.toFixed(1) ?? 'N/A'})`),
+          estimatedRiskReduction: openFindings.length === 0 ? '0%' : '64%',
           model: 'gemini-3-flash-preview',
           latencyMs: 142,
         })
