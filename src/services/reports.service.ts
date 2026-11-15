@@ -7,7 +7,7 @@ export const reportsService = {
     return apiClient.request<SecurityReport[]>(
       '/reports',
       { method: 'GET' },
-      () => INITIAL_REPORTS
+      () => []
     );
   },
 

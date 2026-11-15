@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { FilePenLine, Upload, CheckCircle2, Sparkles } from 'lucide-react';
 import { useSystemStatus } from '../context/SystemStatusContext';
 import { INITIAL_REPORTS } from '../data/seedPreviewData';
@@ -24,7 +25,7 @@ export const AiReportStudioPage: React.FC = () => {
   const { can } = useRBAC();
 
   const realReports = reports.filter((r) => !r.id.startsWith('demo-') && !r.id.startsWith('rpt-2026-'));
-  const displayReports = realReports.length > 0 ? realReports : (reports.length > 0 ? reports : INITIAL_REPORTS);
+  const displayReports = realReports;
   const [selectedReportId, setSelectedReportId] = useState<string>(displayReports[0]?.id || '');
   const activeReport = displayReports.find((r) => r.id === selectedReportId) || displayReports[0];
   const [selectedSectionId, setSelectedSectionId] = useState<string>(
@@ -116,6 +117,27 @@ export const AiReportStudioPage: React.FC = () => {
         <div className="p-3.5 bg-[#22C55E]/10 border border-[#22C55E]/30 rounded-lg flex items-center gap-2 text-xs text-[#22C55E]">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{importMessage}</span>
+        </div>
+      )}
+
+      {/* Empty State when zero reports exist */}
+      {!activeReport && (
+        <div className="py-16 px-6 text-center bg-[#101318] border border-[#29313B] rounded-xl space-y-4">
+          <div className="w-12 h-12 rounded-full bg-[#D6AE45]/15 text-[#D6AE45] flex items-center justify-center mx-auto">
+            <FilePenLine className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-[#F5F7FA]">No Deliverable Reports Generated Yet</h3>
+            <p className="text-xs text-[#A7B0BC] max-w-md mx-auto leading-relaxed">
+              All demo reports have been cleared. Scan any live website URL or network domain in the Website Assessment module to automatically generate a real, comprehensive security assessment report here.
+            </p>
+          </div>
+          <Link
+            to="/assessments/website"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#D6AE45] hover:bg-[#E7C66A] rounded-lg text-xs font-semibold text-[#080A0D] transition-colors"
+          >
+            Go to Website Assessment & Scan Link
+          </Link>
         </div>
       )}
 

@@ -885,7 +885,7 @@ const dbState = {
   findings: [...INITIAL_FINDINGS] as VulnerabilityFinding[],
   aiSessions: [...INITIAL_AI_CONVERSATIONS] as AiConversationSession[],
   ragDocuments: [...INITIAL_RAG_DOCUMENTS] as RagDocumentRecord[],
-  reports: [...INITIAL_REPORTS] as SecurityReport[],
+  reports: [] as SecurityReport[],
   externalImports: [] as ExternalImportRecord[],
   integrations: INITIAL_INTEGRATIONS.map(
     (intg): IntegrationConfigRecord => ({

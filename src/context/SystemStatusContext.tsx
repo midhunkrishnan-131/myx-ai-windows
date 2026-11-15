@@ -242,10 +242,10 @@ export const SystemStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
       } else {
         setRagDocuments(INITIAL_RAG_DOCUMENTS);
       }
-      if (d.reports && d.reports.length > 0) {
-        setReports(d.reports);
+      if (Array.isArray(d.reports)) {
+        setReports(d.reports.filter((r) => !r.id.startsWith('demo-') && !r.id.startsWith('rpt-2026-')));
       } else {
-        setReports(INITIAL_REPORTS);
+        setReports([]);
       }
       if (d.externalImports) setExternalImports(d.externalImports);
       if (d.integrations) setIntegrations(d.integrations);
