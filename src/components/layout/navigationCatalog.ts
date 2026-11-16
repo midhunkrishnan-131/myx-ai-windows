@@ -79,6 +79,14 @@ export const NAVIGATION_CATALOG: NavCatalogItem[] = [
     allowedRoles: ['ADMIN', 'SECURITY_ANALYST', 'VIEWER'],
   },
   {
+    id: 19,
+    label: 'Network Trust Intelligence',
+    path: '/intelligence/network-trust',
+    group: 'Intelligence & Analyzers',
+    allowedRoles: ['ADMIN', 'SECURITY_ANALYST', 'VIEWER'],
+    readOnlyForViewer: true,
+  },
+  {
     id: 9,
     label: 'Vulnerability Findings',
     path: '/findings',

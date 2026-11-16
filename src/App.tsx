@@ -15,6 +15,7 @@ import { WindowsAuditorPage } from './pages/WindowsAuditorPage';
 import { LinkGuardPage } from './pages/LinkGuardPage';
 import { SslTlsAnalyzerPage } from './pages/SslTlsAnalyzerPage';
 import { DnsAnalyzerPage } from './pages/DnsAnalyzerPage';
+import { NetworkTrustIntelligencePage } from './pages/NetworkTrustIntelligencePage';
 import { VulnerabilityFindingsPage } from './pages/VulnerabilityFindingsPage';
 import { AiSecurityAnalystPage } from './pages/AiSecurityAnalystPage';
 import { AiReportStudioPage } from './pages/AiReportStudioPage';
@@ -117,6 +118,14 @@ export default function App() {
                       element={
                         <ProtectedRoute allowedRoles={['ADMIN', 'SECURITY_ANALYST', 'VIEWER']}>
                           <DnsAnalyzerPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/intelligence/network-trust"
+                      element={
+                        <ProtectedRoute allowedRoles={['ADMIN', 'SECURITY_ANALYST', 'VIEWER']}>
+                          <NetworkTrustIntelligencePage />
                         </ProtectedRoute>
                       }
                     />

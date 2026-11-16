@@ -19,6 +19,7 @@ import {
   Settings,
   KeyRound,
   Shield,
+  Radio,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -36,6 +37,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   '/intelligence/linkguard': <Link2 className="w-4 h-4 shrink-0" />,
   '/analyzers/ssl-tls': <Lock className="w-4 h-4 shrink-0" />,
   '/analyzers/dns': <Server className="w-4 h-4 shrink-0" />,
+  '/intelligence/network-trust': <Radio className="w-4 h-4 shrink-0 text-emerald-400" />,
   '/findings': <ShieldAlert className="w-4 h-4 shrink-0" />,
   '/ai/analyst': <Bot className="w-4 h-4 shrink-0" />,
   '/reports/studio': <FilePenLine className="w-4 h-4 shrink-0" />,

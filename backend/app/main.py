@@ -22,6 +22,7 @@ from app.routers.assessments import (
 )
 from app.routers.ai_copilot import router as ai_copilot_router
 from app.routers.wifi_lab import router as wifi_lab_router
+from app.routers.network_trust import router as network_trust_router
 
 app = FastAPI(
     title=f"{BRAND_FULL_TITLE} ({BRAND_EDITION_NAME}) API",
@@ -34,6 +35,7 @@ app = FastAPI(
 app.include_router(assessments_router)
 app.include_router(ai_copilot_router)
 app.include_router(wifi_lab_router)
+app.include_router(network_trust_router)
 
 @app.on_event("startup")
 def on_startup():

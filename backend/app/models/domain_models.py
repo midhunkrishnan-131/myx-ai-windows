@@ -506,3 +506,110 @@ class RagDocumentChunk(Base):
     embedding_json = Column(JSON, nullable=True)  # Mapped to Vector(768) on PostgreSQL pgvector
     metadata_json = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+# 32. network_profiles (Personal & Organization Trusted Baselines)
+class NetworkProfile(Base):
+    __tablename__ = "network_profiles"
+    id = Column(String(36), primary_key=True, default=new_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    ssid = Column(String(128), nullable=False, index=True)
+    profile_type = Column(String(32), default="PERSONAL", nullable=False)  # PERSONAL or ORGANIZATION
+    status = Column(String(32), default="PENDING_REVIEW", nullable=False)  # APPROVED, PENDING_REVIEW, REJECTED
+    baseline_fingerprint = Column(String(128), nullable=False)
+    baseline_bssids = Column(JSON, default=list)
+    baseline_auth = Column(String(64), nullable=False)
+    baseline_cipher = Column(String(64), nullable=False)
+    baseline_gateway_ip = Column(String(64), nullable=True)
+    baseline_gateway_mac = Column(String(64), nullable=True)
+    baseline_dns = Column(JSON, default=list)
+    approved_by = Column(String(255), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+
+# 33. network_observations (Live & Historical WLAN Observations)
+class NetworkObservation(Base):
+    __tablename__ = "network_observations"
+    id = Column(String(36), primary_key=True, default=new_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True)
+    host_id = Column(String(128), nullable=False, index=True)
+    ssid = Column(String(128), nullable=False)
+    bssid = Column(String(64), nullable=False)
+    visible_bssids = Column(JSON, default=list)
+    auth_type = Column(String(64), nullable=False)
+    cipher = Column(String(64), nullable=False)
+    signal_quality = Column(Integer, default=0)
+    channel = Column(Integer, nullable=True)
+    band = Column(String(16), nullable=True)
+    gateway_ip = Column(String(64), nullable=True)
+    gateway_mac = Column(String(64), nullable=True)
+    dns_servers = Column(JSON, default=list)
+    dhcp_server = Column(String(64), nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    captive_portal_detected = Column(Boolean, default=False)
+    captive_portal_url = Column(String(512), nullable=True)
+    observation_metadata = Column(JSON, default=dict)
+    observed_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+# 34. network_risk_assessments (Deterministic Rule Evaluations & Confidence)
+class NetworkRiskAssessment(Base):
+    __tablename__ = "network_risk_assessments"
+    id = Column(String(36), primary_key=True, default=new_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
+    observation_id = Column(String(36), nullable=True)
+    profile_id = Column(String(36), ForeignKey("network_profiles.id", ondelete="SET NULL"), nullable=True)
+    risk_score = Column(Integer, nullable=False)  # 0 to 100
+    severity = Column(String(32), nullable=False)  # LOW, MODERATE, HIGH, CRITICAL
+    confidence = Column(Integer, nullable=False)  # 0 to 100
+    detected_signals = Column(JSON, default=list)
+    field_diffs = Column(JSON, default=list)
+    evidence = Column(JSON, default=dict)
+    explanation = Column(Text, nullable=False)
+    recommended_action = Column(Text, nullable=False)
+    policy_applied = Column(String(128), default="Balanced Protection Mode")
+    assessed_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+# 35. network_quarantine_sessions (Scoped Windows Firewall Containment & Watchdog State)
+class NetworkQuarantineSession(Base):
+    __tablename__ = "network_quarantine_sessions"
+    id = Column(String(36), primary_key=True, default=new_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    host_id = Column(String(128), nullable=False)
+    target_interface = Column(String(128), default="Wi-Fi")
+    isolation_level = Column(String(64), default="BALANCED_QUARANTINE")  # BALANCED_QUARANTINE, RESTRICTED_INTERNET, FULL_ISOLATION
+    applied_rules = Column(JSON, default=list)
+    trigger_reason = Column(Text, nullable=False)
+    risk_score = Column(Integer, nullable=False)
+    timeout_seconds = Column(Integer, default=900)  # 15 min failsafe default
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    status = Column(String(32), default="ACTIVE")  # ACTIVE, ROLLED_BACK, EMERGENCY_RELEASED, EXPIRED
+    released_by = Column(String(255), nullable=True)
+    released_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+# 36. network_protection_policies (Configurable Thresholds & Pinned DNS Allowlist)
+class NetworkProtectionPolicy(Base):
+    __tablename__ = "network_protection_policies"
+    id = Column(String(36), primary_key=True, default=new_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=True)
+    policy_name = Column(String(128), nullable=False)
+    mode = Column(String(32), default="BALANCED")  # BALANCED, STRICT, AUDIT_ONLY
+    low_threshold = Column(Integer, default=0)
+    moderate_threshold = Column(Integer, default=25)
+    high_threshold = Column(Integer, default=50)
+    critical_threshold = Column(Integer, default=75)
+    allowed_gateways = Column(JSON, default=list)
+    allowed_dns = Column(JSON, default=list)
+    auto_quarantine_enabled = Column(Boolean, default=True)
+    watchdog_timeout_sec = Column(Integer, default=900)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
