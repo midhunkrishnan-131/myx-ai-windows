@@ -21,13 +21,15 @@
   <meta property="og:description"
     content="MYX AI by Midhun Krishnan — Discover. Detect. Defend. AI-Powered Cybersecurity Assessment, Vulnerability Management, Windows 10/11 System Auditing & Security Intelligence SaaS Platform." />
   <meta property="og:type" content="website" />
-  <meta property="og:image" content="/assets/aistudio/MYX-AI-primary-vertical-2048x1818-transparent_803e553e.png" />
+  <meta property="og:image" content="/assets/aistudio/logo-128.webp" />
   <meta name="twitter:card" content="summary_large_image" />
-  <link rel="icon" type="image/png"
-    href="/assets/aistudio/MYX-AI-primary-vertical-2048x1818-transparent_803e553e.png" />
-  <link rel="apple-touch-icon" href="/assets/aistudio/MYX-AI-primary-vertical-2048x1818-transparent_803e553e.png" />
+  <link rel="icon" type="image/png" href="/assets/aistudio/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/assets/aistudio/logo-128.png" />
 
-  <!-- Critical Inline Styles for Immediate FCP -->
+  <!-- Preload Critical LCP Image -->
+  <link rel="preload" as="image" href="/assets/aistudio/logo-128.webp" type="image/webp" fetchpriority="high" />
+
+  <!-- Critical Inline Styles for Instant FCP & Zero Layout Shift -->
   <style>
     :root {
       font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -36,6 +38,18 @@
       margin: 0;
       background-color: #0B0D10;
       color: #F5F7FA;
+    }
+    .myx-pre-shell {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .myx-pre-card {
+      width: 100%;
+      max-width: 448px;
     }
   </style>
 
@@ -57,17 +71,35 @@
 <body
   class="bg-[#0B0D10] text-[#F5F7FA] antialiased selection:bg-[#D6AE45]/30 selection:text-[#F5F7FA] overflow-x-hidden">
   <div id="root">
+    <!-- Instant First Contentful Paint (FCP) Pre-render Shell -->
+    <div class="myx-pre-shell">
+      <div class="myx-pre-card">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
+          <div style="width:56px; height:56px; border-radius:12px; background:#101318; border:1px solid rgba(214,174,69,0.4); display:flex; align-items:center; justify-content:center; padding:6px; flex-shrink:0;">
+            <img src="/assets/aistudio/logo-128.webp" alt="MYX AI Logo" width="56" height="56" style="width:100%; height:100%; object-fit:contain;" fetchpriority="high" decoding="async" />
+          </div>
+          <div>
+            <div style="font-size:16px; font-weight:700; color:#F5F7FA; line-height:1.2;">MYX AI by Midhun Krishnan</div>
+            <div style="font-size:12px; color:#D6AE45; margin-top:2px;">Windows Edition · Discover. Detect. Defend.</div>
+          </div>
+        </div>
+        <div style="background:#101318; border:1px solid #29313B; border-radius:12px; padding:24px; min-height:260px;">
+          <div style="height:18px; width:150px; background:#1A2028; border-radius:4px; margin-bottom:16px;"></div>
+          <div style="height:42px; width:100%; background:#141920; border-radius:8px; margin-bottom:12px; border:1px solid #222B36;"></div>
+          <div style="height:42px; width:100%; background:#141920; border-radius:8px; margin-bottom:16px; border:1px solid #222B36;"></div>
+          <div style="height:42px; width:100%; background:#D6AE45; border-radius:8px; opacity:0.85;"></div>
+        </div>
+      </div>
+    </div>
     <noscript>
       <div
         style="font-family:sans-serif; min-height:100vh; background:#0B0D10; color:#F5F7FA; display:flex; align-items:center; justify-content:center; padding:20px;">
         <div
           style="max-width:480px; background:#141920; border:1px solid #29313B; border-radius:12px; padding:32px; text-align:center;">
           <h2 style="font-size:20px; font-weight:700; color:#D6AE45; margin-bottom:12px;">MYX AI (Windows Edition)</h2>
-          <p style="font-size:14px; color:#A7B0BC; line-height:1.6; margin-bottom:20px;">JavaScript is required to run
-            the MYX AI security portal.</p>
+          <p style="font-size:14px; color:#A7B0BC; line-height:1.6; margin-bottom:20px;">JavaScript is required to run the MYX AI security portal.</p>
           <a href="http://localhost:3000"
-            style="display:inline-block; padding:12px 24px; background:#D6AE45; color:#0B0D10; font-weight:600; font-size:14px; border-radius:8px; text-decoration:none;">Open
-            App on Port 3000 &rarr;</a>
+            style="display:inline-block; padding:12px 24px; background:#D6AE45; color:#0B0D10; font-weight:600; font-size:14px; border-radius:8px; text-decoration:none;">Open App on Port 3000 &rarr;</a>
         </div>
       </div>
     </noscript>

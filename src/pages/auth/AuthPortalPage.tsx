@@ -230,6 +230,11 @@ export const AuthPortalPage: React.FC<{ initialMode?: AuthFlowMode }> = ({
               <img
                 src={BRAND_CONFIG.BRAND_LOGO_URL}
                 alt={`${BRAND_CONFIG.BRAND_FULL_TITLE} Logo`}
+                width="56"
+                height="56"
+                // @ts-ignore
+                fetchpriority="high"
+                decoding="async"
                 className="w-full h-full object-contain"
               />
             </div>

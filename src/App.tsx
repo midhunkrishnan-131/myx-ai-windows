@@ -6,7 +6,9 @@ import { AppShell } from './components/layout/AppShell';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
-// Code-split pages with React.lazy to optimize initial bundle size, FCP, and LCP
+import { AuthPortalPage } from './pages/auth/AuthPortalPage';
+
+// Code-split heavy dashboard & audit views with React.lazy
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const WebsiteAssessmentPage = lazy(() => import('./pages/WebsiteAssessmentPage').then((m) => ({ default: m.WebsiteAssessmentPage })));
 const NetworkAssessmentPage = lazy(() => import('./pages/NetworkAssessmentPage').then((m) => ({ default: m.NetworkAssessmentPage })));
@@ -26,7 +28,6 @@ const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage').then((m) 
 const UserManagementPage = lazy(() => import('./pages/UserManagementPage').then((m) => ({ default: m.UserManagementPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 const AccountSecurityPage = lazy(() => import('./pages/AccountSecurityPage').then((m) => ({ default: m.AccountSecurityPage })));
-const AuthPortalPage = lazy(() => import('./pages/auth/AuthPortalPage').then((m) => ({ default: m.AuthPortalPage })));
 
 const RouteLoadingFallback = () => (
   <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-zinc-400">
