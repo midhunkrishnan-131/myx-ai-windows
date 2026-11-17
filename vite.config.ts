@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: './',
+    base: '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
@@ -21,6 +21,7 @@ export default defineConfig(() => {
       target: 'esnext',
       minify: 'esbuild',
       cssMinify: true,
+      modulePreload: false,
       chunkSizeWarningLimit: 800,
       rollupOptions: {
         output: {

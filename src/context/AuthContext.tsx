@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, UserRole, UserSession } from '../types/auth.types';
-import { INITIAL_USER_SESSIONS } from '../data/seedPreviewData';
 
 interface AuthContextValue {
   user: UserProfile | null;
@@ -21,7 +20,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [sessions, setSessions] = useState<UserSession[]>(INITIAL_USER_SESSIONS);
+  const [sessions, setSessions] = useState<UserSession[]>([]);
 
   // Authenticate against server-side session identity on application mount (C-03)
   const verifyCurrentSession = async () => {

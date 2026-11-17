@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import compression from 'compression';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
@@ -972,36 +973,18 @@ async function startServer() {
     next();
   });
 
-  app.use(express.json({ limit: '5mb' }));
-
-  // High-performance gzip response compression for text, JSON, JS, and CSS
-  app.use((req: Request, res: Response, next) => {
-    const acceptEncoding = req.headers['accept-encoding'] || '';
-    if (!acceptEncoding.includes('gzip')) {
-      return next();
-    }
-    const originalSend = res.send;
-    res.send = function (body: any) {
-      if (typeof body === 'string' || Buffer.isBuffer(body)) {
-        const contentType = String(res.getHeader('Content-Type') || '');
-        const isCompressible = /json|javascript|text|css|html|xml|svg/i.test(contentType);
-
-        if (isCompressible && body.length > 512) {
-          try {
-            const compressed = zlib.gzipSync(body);
-            res.setHeader('Content-Encoding', 'gzip');
-            res.setHeader('Content-Length', compressed.length);
-            res.removeHeader('ETag');
-            return originalSend.call(this, compressed);
-          } catch {
-            return originalSend.call(this, body);
-          }
+  app.use(
+    compression({
+      threshold: 512,
+      filter: (req, res) => {
+        if (req.headers['x-no-compression']) {
+          return false;
         }
-      }
-      return originalSend.call(this, body);
-    };
-    next();
-  });
+        return compression.filter(req, res);
+      },
+    })
+  );
+  app.use(express.json({ limit: '5mb' }));
 
   // Strict Origin Allowlist CORS (H-04)
   const ALLOWED_ORIGINS = new Set([

@@ -39,22 +39,22 @@ const RouteLoadingFallback = () => (
 export default function App() {
   return (
     <AuthProvider>
-      <SystemStatusProvider>
-        <BrowserRouter>
-          <Suspense fallback={<RouteLoadingFallback />}>
-            <Routes>
-              {/* Standalone Auth Flows */}
-              <Route path="/login" element={<AuthPortalPage initialMode="LOGIN" />} />
-              <Route path="/register" element={<AuthPortalPage initialMode="REGISTER" />} />
-              <Route path="/verify-email" element={<AuthPortalPage initialMode="VERIFY_EMAIL" />} />
-              <Route path="/forgot-password" element={<AuthPortalPage initialMode="FORGOT_PASSWORD" />} />
-              <Route path="/reset-password" element={<AuthPortalPage initialMode="RESET_PASSWORD" />} />
-              <Route path="/2fa-challenge" element={<AuthPortalPage initialMode="TOTP_CHALLENGE" />} />
+      <BrowserRouter>
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Routes>
+            {/* Standalone Auth Flows */}
+            <Route path="/login" element={<AuthPortalPage initialMode="LOGIN" />} />
+            <Route path="/register" element={<AuthPortalPage initialMode="REGISTER" />} />
+            <Route path="/verify-email" element={<AuthPortalPage initialMode="VERIFY_EMAIL" />} />
+            <Route path="/forgot-password" element={<AuthPortalPage initialMode="FORGOT_PASSWORD" />} />
+            <Route path="/reset-password" element={<AuthPortalPage initialMode="RESET_PASSWORD" />} />
+            <Route path="/2fa-challenge" element={<AuthPortalPage initialMode="TOTP_CHALLENGE" />} />
 
-              {/* Main Application Views Wrapped in AppShell */}
-              <Route
-                path="/*"
-                element={
+            {/* Main Application Views Wrapped in SystemStatusProvider + AppShell */}
+            <Route
+              path="/*"
+              element={
+                <SystemStatusProvider>
                   <AppShell>
                     <ErrorBoundary fallbackTitle="Security Platform Navigation Error">
                       <Routes>
@@ -215,12 +215,12 @@ export default function App() {
                       </Routes>
                     </ErrorBoundary>
                   </AppShell>
-                }
-              />
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
-      </SystemStatusProvider>
+                </SystemStatusProvider>
+              }
+            />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
     </AuthProvider>
   );
 }
