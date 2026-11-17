@@ -27,6 +27,7 @@ def new_uuid() -> str:
     return str(uuid.uuid4())
 
 
+
 class Base(DeclarativeBase):
     pass
 

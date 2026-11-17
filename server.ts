@@ -7,6 +7,7 @@ import net from 'net';
 import https from 'https';
 import child_process from 'child_process';
 import dns from 'node:dns/promises';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
@@ -972,6 +973,35 @@ async function startServer() {
   });
 
   app.use(express.json({ limit: '5mb' }));
+
+  // High-performance gzip response compression for text, JSON, JS, and CSS
+  app.use((req: Request, res: Response, next) => {
+    const acceptEncoding = req.headers['accept-encoding'] || '';
+    if (!acceptEncoding.includes('gzip')) {
+      return next();
+    }
+    const originalSend = res.send;
+    res.send = function (body: any) {
+      if (typeof body === 'string' || Buffer.isBuffer(body)) {
+        const contentType = String(res.getHeader('Content-Type') || '');
+        const isCompressible = /json|javascript|text|css|html|xml|svg/i.test(contentType);
+
+        if (isCompressible && body.length > 512) {
+          try {
+            const compressed = zlib.gzipSync(body);
+            res.setHeader('Content-Encoding', 'gzip');
+            res.setHeader('Content-Length', compressed.length);
+            res.removeHeader('ETag');
+            return originalSend.call(this, compressed);
+          } catch {
+            return originalSend.call(this, body);
+          }
+        }
+      }
+      return originalSend.call(this, body);
+    };
+    next();
+  });
 
   // Strict Origin Allowlist CORS (H-04)
   const ALLOWED_ORIGINS = new Set([
@@ -5113,19 +5143,33 @@ Explanation Mode: ${mode}`,
     res.json(safeUserProfile);
   });
 
-  // Vite middleware for development or static serving for production
-  if (process.env.NODE_ENV !== 'production') {
+  // High-performance static serving from dist/ if built, or Vite middleware fallback
+  const distPath = path.join(__dirname, 'dist');
+  const distExists = fs.existsSync(distPath) && fs.existsSync(path.join(distPath, 'index.html'));
+
+  if (process.env.NODE_ENV === 'production' || (distExists && process.env.VITE_FORCE_DEV !== 'true')) {
+    console.log('[MYX AI Performance Engine] Serving optimized pre-built production bundle from dist/');
+    app.use(
+      express.static(distPath, {
+        maxAge: '1d',
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+          } else {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+        },
+      })
+    );
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  } else {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
