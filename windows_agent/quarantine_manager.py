@@ -177,9 +177,23 @@ def apply_scoped_firewall_quarantine(
     # 6. Register Persistent Windows Task Scheduler Watchdog
     expiry_local = datetime.now() + timedelta(seconds=timeout_seconds)
     expiry_time_str = expiry_local.strftime("%H:%M")
-    schtasks_cmd = f'schtasks.exe /Create /TN "MYX_AI_NTI_QuarantineWatchdog" /TR "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File \\"{ROLLBACK_PS1}\\"" /SC ONCE /ST {expiry_time_str} /RU "SYSTEM" /F'
+    schtasks_cmd = [
+        "schtasks.exe",
+        "/Create",
+        "/TN",
+        "MYX_AI_NTI_QuarantineWatchdog",
+        "/TR",
+        f'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "{ROLLBACK_PS1}"',
+        "/SC",
+        "ONCE",
+        "/ST",
+        expiry_time_str,
+        "/RU",
+        "SYSTEM",
+        "/F",
+    ]
     try:
-        subprocess.run(schtasks_cmd, shell=True, capture_output=True, timeout=5, check=False)
+        subprocess.run(schtasks_cmd, shell=False, capture_output=True, timeout=5, check=False)
     except Exception as exc:
         print(f"[MYX AI Quarantine] Warning: could not register schtasks: {exc}")
 
@@ -225,8 +239,8 @@ def rollback_firewall_quarantine() -> Dict[str, Any]:
     # 2. Cancel Windows Task Scheduler watchdog
     try:
         subprocess.run(
-            'schtasks.exe /Delete /TN "MYX_AI_NTI_QuarantineWatchdog" /F',
-            shell=True,
+            ["schtasks.exe", "/Delete", "/TN", "MYX_AI_NTI_QuarantineWatchdog", "/F"],
+            shell=False,
             capture_output=True,
             timeout=5,
             check=False,
