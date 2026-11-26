@@ -3,6 +3,8 @@ Database initialization and default enterprise seed provisioning.
 Creates all 31 normalized SQLAlchemy tables and inserts system roles, organization,
 and default administrator account.
 """
+import os
+
 from app.database.session import engine, SessionLocal
 from app.models.domain_models import Base, Role, Permission, RolePermission, Organization, User, OrganizationMembership
 from app.auth.password import hash_password_argon2id
